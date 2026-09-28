@@ -16,6 +16,10 @@ Seoul offers endless places to explore, but international visitors often face ch
 - **Nemotron vision** checks photo missions before each reveal.
 - **cuOpt** plans time-aware routes, replans when travelers run late, and solves the two-team race as a 2-vehicle VRP. Six GPU test cases passed, including the race.
 
+## Demo video
+
+[![Watch the Unboxing Seoul demo](https://i.ytimg.com/vi/XpnAdOh8B7M/hqdefault.jpg)](https://youtu.be/XpnAdOh8B7M)
+
 ## How it works
 
 1. Choose a mood, trip time, and starting area.
