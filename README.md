@@ -6,7 +6,7 @@
 ## 실행
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # 이 폴더에서 실행해야 테마 설정이 적용됨
 export NVIDIA_API_KEY=nvapi-...        # build.nvidia.com 에서 발급 (없어도 동작)
 .venv/bin/streamlit run app.py
 ```
@@ -26,6 +26,7 @@ export NVIDIA_API_KEY=nvapi-...        # build.nvidia.com 에서 발급 (없어�
 | 파일 | 역할 |
 |---|---|
 | `app.py` | Streamlit UI: 무드 선택 → 비밀 스톱 카드 → 길안내 → 도착 시 공개 |
+| `ui.py`, `.streamlit/config.toml` | 디자인 시스템: 크림 캔버스, 6색 컬러 카드(스톱마다 순환), Inter, 둥근 모서리, 클레이풍 히어로 일러스트 |
 | `planner.py` | 동선 최적화: **Prize-collecting TSP with time windows** (cuOpt / CPU exact DP) |
 | `llm.py` | Nemotron: 자유 문장 무드 → 장소 점수, 다국어 수수께끼 힌트, 스포일러 가드 |
 | `data/seoul_pois.json` | 서울 51곳: 명소 30, 액티비티 8, 식당 7, 카페 4, 시장 2 (좌표는 OpenStreetMap으로 교차 확인) |

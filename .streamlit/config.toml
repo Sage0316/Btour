@@ -1,0 +1,20 @@
+# Warm cream design system: cream canvas, near-black ink, generous radii, Inter.
+[theme]
+base = "light"
+primaryColor = "#0a0a0a"
+backgroundColor = "#fffaf0"
+secondaryBackgroundColor = "#f5f0e0"
+textColor = "#0a0a0a"
+linkColor = "#0a0a0a"
+borderColor = "#e5e5e5"
+showWidgetBorder = true
+baseRadius = "12px"
+buttonRadius = "12px"
+baseFontSize = 16
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFontWeights = 500
+
+[theme.sidebar]
+backgroundColor = "#faf5e8"
+secondaryBackgroundColor = "#f5f0e0"
