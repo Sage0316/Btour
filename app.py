@@ -22,7 +22,10 @@ LANGS = ["English", "日本語", "简体中文", "Español", "Français", "한�
 MODE_ICON = {"walk": "🚶", "subway": "🚇"}
 KIND_BADGE = {"restaurant": "🍽️ Meal stop", "cafe": "☕ Café break", "activity": "🎟️ Activity"}
 TEAMS = {"A": "🔴 Team A", "B": "🔵 Team B"}
-TEAM_STATE = ("plan", "step", "revealed", "peek", "mission", "photos", "replan_msg")
+TEAM_STATE = ("plan", "step", "revealed", "peek", "mission", "photos", "replan_msg", "stage")
+COMPASS = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"]
+ARROWS = ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"]
+WALKABLE_KM = 0.8   # closer than this, skip "get to the area" and go straight to the walking clue
 
 st.set_page_config(page_title="Seoul Blind Trip", page_icon="🙈", layout="wide")
 st.html(ui.CSS)
@@ -90,6 +93,31 @@ def easy_clue(stop, from_pt):
     inside = ", mostly indoors" if "indoor" in tags else ""
     drama = " You may have seen it in a K-drama." if stop.poi.get("dramas") else ""
     return f"Extra clue: it's {cat or 'a local favorite'}, about {km:.1f} km away{inside}.{drama}"
+
+
+def compass_clue(a, b):
+    lat1, lat2 = math.radians(a[0]), math.radians(b[0])
+    dlon = math.radians(b[1] - a[1])
+    x = math.sin(dlon) * math.cos(lat2)
+    y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    k = int(((math.degrees(math.atan2(x, y)) + 360) % 360 + 22.5) // 45) % 8
+    metres = max(50, round(haversine_km(a, b) * 1000 / 50) * 50)
+    return f"{ARROWS[k]} Walk about {metres} m {COMPASS[k]}."
+
+
+def approach(stop, from_pt):
+    """Where Google Maps drops the traveler first: a nearby station (with a hand-written
+    walking clue) or a spot ~200 m short of the place. None when it's walkable already."""
+    here = (stop.poi["lat"], stop.poi["lng"])
+    d = haversine_km(from_pt, here)
+    if d < WALKABLE_KM:
+        return None
+    ap = stop.poi.get("approach")
+    if ap:
+        return {"pt": (ap["lat"], ap["lng"]), "label": ap["station"], "clue": ap["clue"]}
+    f = 0.2 / d
+    drop = (here[0] + (from_pt[0] - here[0]) * f, here[1] + (from_pt[1] - here[1]) * f)
+    return {"pt": drop, "label": "a spot about 200 m away", "clue": None}
 
 
 def mission_for(poi):
@@ -162,7 +190,7 @@ def team_progress(team):
 
 def reset():
     for k in ("plan", "texts", "teaser", "step", "revealed", "meta", "peek", "replan_msg",
-              "mission", "photos", "teams", "active", "arrivals", "team_pick"):
+              "mission", "photos", "teams", "active", "arrivals", "team_pick", "stage"):
         ss.pop(k, None)
 
 
@@ -277,11 +305,11 @@ if "plan" not in ss:
 
             if race_plan:
                 fresh = {"step": 0, "revealed": False, "peek": set(), "mission": False, "photos": {},
-                         "replan_msg": None}
+                         "replan_msg": None, "stage": {}}
                 ss.update(teams={t: {"plan": race_plan.teams[t], **fresh} for t in "AB"},
                           active="A", arrivals={}, team_pick="A")
             ss.update(plan=plan, texts=texts, teaser=teaser, step=0, revealed=False, peek=set(),
-                      mission=False, photos={}, replan_msg=None,
+                      mission=False, photos={}, replan_msg=None, stage={},
                       meta={"mood": mood, "source": source, "lang": lang, "scores": scores,
                             "hours": hours, "weekday": day.weekday(), "max_stops": max_stops,
                             "addons": addons, "foodie": foodie, "backend": backend,
@@ -370,11 +398,27 @@ else:
                 + (f'<p class="bt-body" style="color:inherit;margin-top:12px">🆘 Peeked: <b>{ui.text(stop.poi["name_en"])}</b> · '
                    f'<span style="font-family:\'Noto Sans KR\',sans-serif">{ui.text(stop.poi["name_ko"])}</span></p>'
                    if peeked else ""))
+            # Help ladder for this leg only: area (station) -> walking clue -> exact spot.
+            appr = approach(stop, points[i])
+            walking = appr is None or ss.stage.get(stop.poi["id"]) == "walk"
+            if walking:
+                translated = ss.texts.get(stop.poi["id"], {}).get("walk")
+                if appr and appr["clue"]:
+                    clue = translated or appr["clue"]
+                    extra = compass_clue(appr["pt"], here) if difficulty == "Easy" else ""
+                else:
+                    clue, extra = compass_clue(appr["pt"] if appr else points[i], here), ""
+                st.html(f'<div class="bt-frag"><b>🚶 Walking clue</b><br>{ui.text(clue)}'
+                        + (f'<br>{ui.text(extra)}' if extra else "") + '</div>')
+            speech_text = clue if walking else text_for(stop, "hint")
             speech_lang = ss.meta["lang"] if stop.poi["id"] in ss.texts else "English"
-            st.iframe(ui.speak_button(text_for(stop, "hint"), speech_lang, color in ui.DARK_CARDS),
-                      height=44)
-            st.link_button("🧭 Navigate with Google Maps", gmaps_link(here), width="stretch")
-            if not ss.get("mission") and st.button(
+            st.iframe(ui.speak_button(speech_text, speech_lang, color in ui.DARK_CARDS), height=44)
+            if not walking:
+                st.link_button(f"🧭 Get to the area: {appr['label']}", gmaps_link(appr["pt"]), width="stretch")
+                if st.button("🚶 I'm in the area — show the walking clue", type="primary", width="stretch"):
+                    ss.stage[stop.poi["id"]] = "walk"
+                    st.rerun()
+            if walking and not ss.get("mission") and st.button(
                     "📍 I've arrived — " + ("take the photo mission" if ss.meta.get("missions") else "reveal!"),
                     type="primary", width="stretch"):
                 ss.replan_msg = None
@@ -385,6 +429,9 @@ else:
                 else:
                     ss.revealed = True
                 st.rerun()
+            if walking and not ss.get("mission"):
+                st.link_button("😵 Can't find it? Open the exact spot in Google Maps", gmaps_link(here),
+                               width="stretch")
             if ss.get("mission"):
                 st.html(f'<p class="bt-label" style="color:inherit;opacity:.75;margin-top:16px">📷 Photo mission</p>'
                         f'<p class="bt-title-md">{ui.text(mission_for(stop.poi))}</p>')

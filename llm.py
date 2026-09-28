@@ -121,6 +121,7 @@ def write_hints(stops, lang, mood, difficulty="Medium"):
     lines = "\n".join(
         f'{i + 1}. id={s.poi["id"]} | {s.poi["name_en"]} | facts: {s.poi["reveal"]} '
         f'Tip: {s.poi["tip"]}'
+        + (f' | walking clue: {s.poi["approach"]["clue"]}' if s.poi.get("approach") else "")
         for i, s in enumerate(stops)
     )
     system = ("You write playful riddle-style clues for a 'blind trip' in Seoul, where the "
@@ -133,8 +134,9 @@ def write_hints(stops, lang, mood, difficulty="Medium"):
         f"that identifies it. {DIFFICULTY.get(difficulty, '')}\n"
         '- "reveal": 2 sentences introducing the place by name, shown after arrival.\n'
         '- "tip": 1 practical sentence.\n'
+        '- "walk": only if a walking clue is given, translate it faithfully (keep directions exact).\n'
         'Also write "teaser": one sentence hyping the whole mystery trip without naming places.\n'
-        'Format: {"teaser": "...", "stops": [{"id": "...", "hint": "...", "reveal": "...", "tip": "..."}]}'
+        'Format: {"teaser": "...", "stops": [{"id": "...", "hint": "...", "reveal": "...", "tip": "...", "walk": "..."}]}'
     )
     data = _json(_chat(system, user, temperature=0.7))
     if not data:
@@ -147,6 +149,8 @@ def write_hints(stops, lang, mood, difficulty="Medium"):
             continue
         if leaks(item["hint"], poi):  # spoiler guard: keep the curated hint
             item["hint"] = None
+        if item.get("walk") and leaks(item["walk"], poi):
+            item["walk"] = None
         out[poi["id"]] = item
     return out, data.get("teaser")
 
