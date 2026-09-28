@@ -95,7 +95,14 @@ def leaks(text, poi):
     return any(w in low for w in words if w not in GENERIC)
 
 
-def write_hints(stops, lang, mood):
+DIFFICULTY = {
+    "Easy": "Make each hint fairly direct: say what kind of place it is and one distinctive feature.",
+    "Medium": "Make each hint intriguing but solvable.",
+    "Hard": "Make each hint a cryptic riddle built on metaphor; avoid obvious category words.",
+}
+
+
+def write_hints(stops, lang, mood, difficulty="Medium"):
     """Spoiler-free hints + reveal text in the traveler's language.
 
     Returns {id: {"hint", "reveal", "tip"}} and a one-line teaser, or (None, None).
@@ -112,7 +119,7 @@ def write_hints(stops, lang, mood):
         "For each stop write:\n"
         '- "hint": 1-2 intriguing sentences about what the traveler will experience. '
         "NEVER include the place name, neighborhood, district, station, or any proper noun "
-        "that identifies it.\n"
+        f"that identifies it. {DIFFICULTY.get(difficulty, '')}\n"
         '- "reveal": 2 sentences introducing the place by name, shown after arrival.\n'
         '- "tip": 1 practical sentence.\n'
         'Also write "teaser": one sentence hyping the whole mystery trip without naming places.\n'

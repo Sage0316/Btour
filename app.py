@@ -14,7 +14,7 @@ import streamlit as st
 
 import llm
 import ui
-from planner import (START_POINTS, THEMES, cuopt_available, load_pois,
+from planner import (START_POINTS, THEMES, cuopt_available, haversine_km, load_pois,
                      min_to_hhmm, plan_trip, tag_scores)
 
 LANGS = ["English", "日本語", "简体中文", "Español", "Français", "한국어"]
@@ -70,8 +70,55 @@ def badge(stop):
     return "🍽️ Food stop" if stop.group == "food" else ""
 
 
+def easy_clue(stop, from_pt):
+    kind, tags = stop.poi.get("kind"), stop.poi["tags"]
+    cat = {"restaurant": "a place to eat", "cafe": "a café", "market": "a market",
+           "activity": "an activity"}.get(kind)
+    if not cat:
+        for tag, label in (("traditional", "a historic spot"), ("nature", "an outdoor green space"),
+                           ("shopping", "a shopping area"), ("night", "a night-view spot"),
+                           ("landmark", "a famous landmark")):
+            if tag in tags:
+                cat = label
+                break
+    km = haversine_km(from_pt, (stop.poi["lat"], stop.poi["lng"]))
+    inside = ", mostly indoors" if "indoor" in tags else ""
+    return f"Extra clue: it's {cat or 'a local favorite'}, about {km:.1f} km away{inside}."
+
+
+def replan(i, delay):
+    """Re-optimize the remaining stops from the last place the traveler left."""
+    plan, meta = ss.plan, ss.meta
+    done = plan.stops[:i]
+    from_pt = plan.start_point if i == 0 else (done[-1].poi["lat"], done[-1].poi["lng"])
+    now = (plan.start_min if i == 0 else done[-1].depart) + delay
+    left = plan.start_min + meta["hours"] * 60 - now
+    before = {s.poi["id"] for s in plan.stops[i:]}
+    addons = [a for a in meta["addons"] if not any(s.group == a for s in done)]
+    new = plan_trip(pois, meta["scores"], plan.start_name, now, max(left, 0) / 60, meta["weekday"],
+                    max(meta["max_stops"] - i, 1), meta["backend"], addons, meta["foodie"],
+                    start_pt=from_pt, exclude=[s.poi["id"] for s in done]) if left > 30 else None
+    new_stops = new.stops if new else []
+    plan.stops = done + new_stops
+    plan.end_min = new.end_min if new_stops else now
+    if new:
+        plan.backend, plan.solve_ms = new.backend, new.solve_ms
+    after = {s.poi["id"] for s in new_stops}
+    if new_stops and llm.available():
+        try:
+            texts, _ = llm.write_hints(new_stops, meta["lang"], meta["mood"], meta["difficulty"])
+            ss.texts.update(texts or {})
+        except Exception:
+            pass
+    ss.peek = set()
+    ss.replan_msg = (f"⏰ Re-planned from {min_to_hhmm(now)}"
+                     + (f" in {new.solve_ms:.0f} ms" if new else "")
+                     + f": {len(before & after)} kept, {len(before - after)} dropped, "
+                       f"{len(after - before)} new. Destinations stay secret.")
+
+
 def reset():
-    for k in ("plan", "texts", "teaser", "step", "revealed", "meta"):
+    for k in ("plan", "texts", "teaser", "step", "revealed", "meta", "peek", "replan_msg"):
         ss.pop(k, None)
 
 
@@ -106,10 +153,13 @@ if "plan" not in ss:
         lang = c2.selectbox("Clue language", LANGS)
         c3, c4, c5 = st.columns(3)
         day = c3.date_input("Date", dt.date.today())
-        default_t = dt.time(18, 0) if theme == "night" else dt.time(10, 0)
+        default_t = {"night": dt.time(18, 0), "romantic": dt.time(17, 0)}.get(theme, dt.time(10, 0))
         t0 = c4.time_input("Start time", default_t, step=dt.timedelta(minutes=30))
         hours = c5.slider("Hours", 3, 10, 6)
-        max_stops = st.slider("Max secret stops", 3, 7, 5)
+        c6, c7 = st.columns(2)
+        max_stops = c6.slider("Max secret stops", 3, 7, 5)
+        difficulty = c7.segmented_control("Clue difficulty", ["Easy", "Medium", "Hard"],
+                                          default="Medium") or "Medium"
 
         st.html('<p class="bt-label" style="margin-top:8px">Add to my route</p>'
                 '<p class="bt-caption" style="margin:-8px 0 4px">The optimizer picks the spot that fits your path and timing.</p>')
@@ -150,14 +200,17 @@ if "plan" not in ss:
                 if llm.available():
                     st.write(f"✍️ Writing spoiler-free clues in {lang}…")
                     try:
-                        texts, teaser = llm.write_hints(plan.stops, lang, mood)
+                        texts, teaser = llm.write_hints(plan.stops, lang, mood, difficulty)
                         texts = texts or {}
                     except Exception as e:
                         st.write(f"⚠️ Using curated English clues ({e})")
                 status.update(label="Your secret route is ready!", state="complete")
 
-            ss.update(plan=plan, texts=texts, teaser=teaser, step=0, revealed=False,
-                      meta={"mood": mood, "source": source, "lang": lang, "scores": scores})
+            ss.update(plan=plan, texts=texts, teaser=teaser, step=0, revealed=False, peek=set(),
+                      meta={"mood": mood, "source": source, "lang": lang, "scores": scores,
+                            "hours": hours, "weekday": day.weekday(), "max_stops": max_stops,
+                            "addons": addons, "foodie": foodie, "backend": backend,
+                            "difficulty": difficulty})
             st.rerun()
 
     st.html(ui.how_it_works())
@@ -182,6 +235,8 @@ m2.metric("Trip length", f"{(plan.end_min - plan.start_min) / 60:.1f} h")
 m3.metric("Back by", min_to_hhmm(plan.end_min))
 if plan.note:
     st.caption(f"ℹ️ {plan.note}")
+if ss.get("replan_msg"):
+    st.success(ss.replan_msg)
 
 if i >= n:
     st.balloons()
@@ -205,20 +260,41 @@ else:
         color = ui.CARD_COLORS[i % len(ui.CARD_COLORS)]
         tone = "on-dark" if color in ui.DARK_CARDS else "on-light"
         wait = f" · opens {stop.poi['open']}" if stop.wait else ""
+        difficulty = ss.meta.get("difficulty", "Medium")
+        peeked = i in ss.get("peek", set())
         with st.container(key=f"stop-{color}"):
             st.html(
                 f'<p class="bt-label" style="color:inherit;opacity:.75">Secret stop {i + 1} of {n}</p>'
-                + ui.pills([badge(stop),
+                + ui.pills([badge(stop) if difficulty != "Hard" else "",
                             f"{MODE_ICON[stop.mode]} ~{stop.travel_min} min by {stop.mode}",
                             f"arrive ≈ {min_to_hhmm(stop.arrive)}{wait}",
                             f"stay ≈ {stop.poi['stay']} min"], tone)
-                + f'<p class="bt-hint">🔒 “{ui.text(text_for(stop, "hint"))}”</p>')
+                + f'<p class="bt-hint">🔒 “{ui.text(text_for(stop, "hint"))}”</p>'
+                + (f'<p class="bt-body" style="color:inherit;opacity:.9">💡 {ui.text(easy_clue(stop, points[i]))}</p>'
+                   if difficulty == "Easy" else "")
+                + (f'<p class="bt-body" style="color:inherit;margin-top:12px">🆘 Peeked: <b>{ui.text(stop.poi["name_en"])}</b> · '
+                   f'<span style="font-family:\'Noto Sans KR\',sans-serif">{ui.text(stop.poi["name_ko"])}</span></p>'
+                   if peeked else ""))
             c1, c2 = st.columns(2)
             c1.link_button("🧭 Google Maps", gmaps_link(points[i], here), width="stretch")
             c2.link_button("🗺️ Kakao Map", kakao_link(f"Secret Stop {i + 1}", here), width="stretch")
             if st.button("📍 I've arrived — reveal!", type="primary", width="stretch"):
                 ss.revealed = True
+                ss.replan_msg = None
                 st.rerun()
+            c3, c4 = st.columns(2)
+            with c3.popover("⏰ Running late?", width="stretch"):
+                delay = st.select_slider("How late are you?", [15, 30, 45, 60, 90], value=30,
+                                         format_func=lambda m: f"{m} min")
+                st.caption("We'll re-optimize the remaining stops from where you are. They stay secret.")
+                if st.button("Re-plan my route", type="primary", width="stretch"):
+                    replan(i, delay)
+                    st.rerun()
+            with c4.popover("🆘 Lost? Peek", width="stretch"):
+                st.warning("This reveals where you're heading. Use it if you're lost or need to ask someone.")
+                if st.button("Show me the destination", width="stretch"):
+                    ss.peek = ss.get("peek", set()) | {i}
+                    st.rerun()
     else:
         with st.container(key="reveal"):
             st.html(

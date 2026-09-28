@@ -100,8 +100,9 @@ CSS = f"""
 [class*="st-key-stop-"] [data-testid="stBaseButton-primary"]:hover {{
   background: #fff; border-color: #fff; color: var(--ink); }}
 [class*="st-key-stop-"] [data-testid="stBaseButton-primary"] * {{ color: var(--ink) !important; }}
-[class*="st-key-stop-"] [data-testid="stBaseLinkButton-secondary"] {{
-  background: transparent; border: 1px solid currentColor; color: inherit; }}
+[class*="st-key-stop-"] [data-testid="stBaseLinkButton-secondary"],
+[class*="st-key-stop-"] [data-testid="stPopover"] button {{
+  background: transparent; border: 1px solid currentColor; color: inherit; min-height: 40px; border-radius: var(--r-md); }}
 .st-key-stop-pink [data-testid="stBaseLinkButton-secondary"] *,
 .st-key-stop-teal [data-testid="stBaseLinkButton-secondary"] * {{ color: var(--on-dark); }}
 

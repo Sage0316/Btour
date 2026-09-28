@@ -323,10 +323,14 @@ ADDON_LABELS = {"food": "a food stop", "activity": "an activity"}
 
 
 def plan_trip(pois, scores, start_name, start_min, hours, weekday, max_stops,
-              backend="auto", addons=(), foodie=False):
-    start_pt = START_POINTS[start_name]
+              backend="auto", addons=(), foodie=False, start_pt=None, exclude=()):
+    """Plan a route. `start_pt`/`exclude` let a trip be re-planned mid-way from
+    the traveler's current position without revisiting places."""
+    start_pt = start_pt or START_POINTS[start_name]
     budget = int(hours * 60)
     addons = set(addons)
+    if exclude:
+        pois = [p for p in pois if p["id"] not in set(exclude)]
     all_cands = _candidates(pois, scores, start_pt, start_min, budget, weekday, addons, foodie)
     required = {g for g in addons if any(c.group == g for c in all_cands)}
     caps = {g: 1 for g in required}
