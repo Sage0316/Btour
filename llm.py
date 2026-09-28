@@ -9,6 +9,7 @@ import io
 import json
 import os
 import re
+import time
 
 import requests
 
@@ -62,6 +63,9 @@ def _chat(system, user, max_tokens=2500, temperature=0.4, models=None, timeout=6
                 # Nemotron reasons at length by default (70s+); we only need the JSON answer.
                 body["chat_template_kwargs"] = {"enable_thinking": False}
             r = requests.post(BASE_URL, headers=headers, timeout=timeout, json=body)
+            if r.status_code in (429, 503):  # shared endpoint busy: one short retry before falling back
+                time.sleep(1.5)
+                r = requests.post(BASE_URL, headers=headers, timeout=timeout, json=body)
             if r.status_code in (401, 403):
                 raise RuntimeError(f"NVIDIA API key rejected ({r.status_code})")
             r.raise_for_status()
