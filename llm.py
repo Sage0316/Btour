@@ -4,6 +4,8 @@ Every function degrades gracefully: with no NVIDIA_API_KEY, or on any API error,
 callers get None and fall back to the tag-based scores / hand-written hints.
 """
 
+import base64
+import io
 import json
 import os
 import re
@@ -35,11 +37,20 @@ def available():
     return bool(os.getenv("NVIDIA_API_KEY"))
 
 
-def _chat(system, user, max_tokens=2500, temperature=0.4):
+VISION_MODELS = [
+    m for m in [
+        os.getenv("NEMOTRON_VISION_MODEL"),
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        "meta/llama-3.2-11b-vision-instruct",
+    ] if m
+]
+
+
+def _chat(system, user, max_tokens=2500, temperature=0.4, models=None):
     global last_model_used
     headers = {"Authorization": f"Bearer {os.environ['NVIDIA_API_KEY']}"}
     err = None
-    for model in MODELS:
+    for model in models or MODELS:
         try:
             r = requests.post(BASE_URL, headers=headers, timeout=60, json={
                 "model": model,
@@ -138,3 +149,26 @@ def write_hints(stops, lang, mood, difficulty="Medium"):
             item["hint"] = None
         out[poi["id"]] = item
     return out, data.get("teaser")
+
+
+def _jpeg_data_url(image_bytes, max_side=768):
+    from PIL import Image
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img.thumbnail((max_side, max_side))
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=80)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def check_photo(image_bytes, mission):
+    """Ask a vision model whether the photo fulfils the mission. Returns (passed, comment)."""
+    system = "You judge photo missions in a playful travel game. Be lenient and friendly. Reply with JSON only."
+    user = [
+        {"type": "text", "text": (
+            f"Mission: {mission}\nDoes this photo reasonably fulfil the mission? "
+            'Reply {"pass": true|false, "comment": "<one short friendly sentence about the photo>"}. '
+            "Do not name or guess the specific place.")},
+        {"type": "image_url", "image_url": {"url": _jpeg_data_url(image_bytes)}},
+    ]
+    data = _json(_chat(system, user, max_tokens=1500, temperature=0.2, models=VISION_MODELS)) or {}
+    return bool(data.get("pass", True)), data.get("comment") or "Nice shot!"

@@ -87,6 +87,25 @@ def easy_clue(stop, from_pt):
     return f"Extra clue: it's {cat or 'a local favorite'}, about {km:.1f} km away{inside}."
 
 
+def mission_for(poi):
+    """Spoiler-free photo mission: category level only, never the place itself."""
+    kind, tags = poi.get("kind"), poi["tags"]
+    by_kind = {"restaurant": "Snap your dish before you dig in.",
+               "cafe": "Snap your drink or pastry.",
+               "market": "Snap a food stall or something sizzling.",
+               "activity": "Snap the activity in action: your ride, your view or your outfit."}
+    if kind in by_kind:
+        return by_kind[kind]
+    for tag, text in (("traditional", "Snap something traditional: a tiled roof, a gate or a lantern."),
+                      ("nature", "Snap something green or blue: trees, grass or water."),
+                      ("night", "Snap the lights around you."),
+                      ("shopping", "Snap a shop sign or a window display."),
+                      ("landmark", "Snap the landmark you think you've found.")):
+        if tag in tags:
+            return text
+    return "Snap something that proves you made it."
+
+
 def replan(i, delay):
     """Re-optimize the remaining stops from the last place the traveler left."""
     plan, meta = ss.plan, ss.meta
@@ -124,7 +143,8 @@ def cached_outlook(day, start_min, hours):
 
 
 def reset():
-    for k in ("plan", "texts", "teaser", "step", "revealed", "meta", "peek", "replan_msg"):
+    for k in ("plan", "texts", "teaser", "step", "revealed", "meta", "peek", "replan_msg",
+              "mission", "photos"):
         ss.pop(k, None)
 
 
@@ -175,6 +195,9 @@ if "plan" not in ss:
         max_stops = c6.slider("Max secret stops", 3, 7, 5)
         difficulty = c7.segmented_control("Clue difficulty", ["Easy", "Medium", "Hard"],
                                           default="Medium") or "Medium"
+        missions = st.toggle("📷 Photo missions: snap a photo to unlock each reveal",
+                             help="A vision model on build.nvidia.com checks your photo. Without an "
+                                  "API key, any photo unlocks the reveal.")
 
         st.html('<p class="bt-label" style="margin-top:8px">Add to my route</p>'
                 '<p class="bt-caption" style="margin:-8px 0 4px">The optimizer picks the spot that fits your path and timing.</p>')
@@ -224,10 +247,12 @@ if "plan" not in ss:
                 status.update(label="Your secret route is ready!", state="complete")
 
             ss.update(plan=plan, texts=texts, teaser=teaser, step=0, revealed=False, peek=set(),
+                      mission=False, photos={},
                       meta={"mood": mood, "source": source, "lang": lang, "scores": scores,
                             "hours": hours, "weekday": day.weekday(), "max_stops": max_stops,
                             "addons": addons, "foodie": foodie, "backend": backend,
                             "difficulty": difficulty, "date": day.strftime("%a %d %b %Y"),
+                            "missions": missions,
                             "weather": weather.describe(forecast) + (" (simulated)" if demo_rain else ""),
                             "rain_adapted": bool(adapt_weather and forecast and forecast["rainy"]
                                                  and theme != "rainy")})
@@ -299,10 +324,42 @@ else:
             c1, c2 = st.columns(2)
             c1.link_button("🧭 Google Maps", gmaps_link(points[i], here), width="stretch")
             c2.link_button("🗺️ Kakao Map", kakao_link(f"Secret Stop {i + 1}", here), width="stretch")
-            if st.button("📍 I've arrived — reveal!", type="primary", width="stretch"):
-                ss.revealed = True
+            if not ss.get("mission") and st.button(
+                    "📍 I've arrived — " + ("take the photo mission" if ss.meta.get("missions") else "reveal!"),
+                    type="primary", width="stretch"):
                 ss.replan_msg = None
+                if ss.meta.get("missions"):
+                    ss.mission = True
+                else:
+                    ss.revealed = True
                 st.rerun()
+            if ss.get("mission"):
+                st.html(f'<p class="bt-label" style="color:inherit;opacity:.75;margin-top:16px">📷 Photo mission</p>'
+                        f'<p class="bt-title-md">{ui.text(mission_for(stop.poi))}</p>')
+                upload = st.file_uploader("Upload a photo", type=["jpg", "jpeg", "png", "webp"])
+                shot = None
+                if st.toggle("📸 Use my camera instead"):
+                    shot = st.camera_input("Take a photo", label_visibility="collapsed")
+                photo = shot or upload
+                m1_, m2_ = st.columns(2)
+                if photo and m1_.button("✅ Check my photo", type="primary", width="stretch"):
+                    data = photo.getvalue()
+                    passed, comment = True, "Photo saved! (No API key, so no AI check.)"
+                    if llm.available():
+                        with st.spinner("A vision model is looking at your photo…"):
+                            try:
+                                passed, comment = llm.check_photo(data, mission_for(stop.poi))
+                            except Exception as e:
+                                comment = f"Couldn't check the photo ({e}), so it counts!"
+                    if passed:
+                        ss.photos[i] = data
+                        ss.mission, ss.revealed = False, True
+                        st.toast(f"📷 {comment}")
+                        st.rerun()
+                    st.warning(f"Not quite: {comment} Try another shot, or skip.")
+                if m2_.button("Skip mission", width="stretch"):
+                    ss.mission, ss.revealed = False, True
+                    st.rerun()
             c3, c4 = st.columns(2)
             with c3.popover("⏰ Running late?", width="stretch"):
                 delay = st.select_slider("How late are you?", [15, 30, 45, 60, 90], value=30,
@@ -325,6 +382,8 @@ else:
                 f'<p class="bt-caption">Show this to locals if you need directions</p>'
                 f'<p class="bt-body" style="margin-top:20px">{ui.text(text_for(stop, "reveal"))}</p>'
                 f'<div class="bt-frag" style="background:var(--canvas)">💡 {ui.text(text_for(stop, "tip"))}</div>')
+            if i in ss.get("photos", {}):
+                st.image(ss.photos[i], caption="Your mission photo", width=320)
             label = "Next secret stop →" if i + 1 < n else "Finish trip 🎉"
             if st.button(label, type="primary", width="stretch"):
                 ss.step += 1

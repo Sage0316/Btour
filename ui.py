@@ -97,6 +97,13 @@ CSS = f"""
 ''' for c in CARD_COLORS)}
 .st-key-stop-pink, .st-key-stop-teal {{ color: var(--on-dark); }}
 .st-key-stop-pink [data-testid="stMarkdownContainer"] *, .st-key-stop-teal [data-testid="stMarkdownContainer"] * {{ color: var(--on-dark); }}
+/* cream widgets inside dark cards keep ink text */
+.st-key-stop-pink [data-testid="stExpander"] [data-testid="stMarkdownContainer"] *,
+.st-key-stop-teal [data-testid="stExpander"] [data-testid="stMarkdownContainer"] *,
+.st-key-stop-pink [data-testid="stExpander"] summary *, .st-key-stop-teal [data-testid="stExpander"] summary *,
+.st-key-stop-pink [data-testid="stCameraInput"] *, .st-key-stop-teal [data-testid="stCameraInput"] *,
+.st-key-stop-pink [data-testid="stFileUploaderDropzone"] *, .st-key-stop-teal [data-testid="stFileUploaderDropzone"] * {{
+  color: var(--ink) !important; }}
 .bt-hint {{ font-size: 26px; font-weight: 500; line-height: 1.3; letter-spacing: -0.4px; margin: 16px 0 8px; }}
 
 /* ---------- widgets ---------- */
@@ -114,6 +121,7 @@ CSS = f"""
   background: #fff; border-color: #fff; color: var(--ink); }}
 [class*="st-key-stop-"] [data-testid="stBaseButton-primary"] * {{ color: var(--ink) !important; }}
 [class*="st-key-stop-"] [data-testid="stBaseLinkButton-secondary"],
+[class*="st-key-stop-"] [data-testid="stBaseButton-secondary"],
 [class*="st-key-stop-"] [data-testid="stPopover"] button {{
   background: transparent; border: 1px solid currentColor; color: inherit; min-height: 40px; border-radius: var(--r-md); }}
 .st-key-stop-pink [data-testid="stBaseLinkButton-secondary"] *,
