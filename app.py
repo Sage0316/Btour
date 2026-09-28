@@ -223,7 +223,7 @@ def clues_in_background(stops, texts, meta):
 
 TRIPS = Path(__file__).parent / ".trips"   # git-ignored, local only
 PERSIST = ("plan", "texts", "teaser", "step", "revealed", "meta", "peek", "replan_msg", "mission",
-           "photos", "stage", "teams", "active", "arrivals", "team_pick")
+           "photos", "stage", "teams", "active", "arrivals", "team_pick", "celebrated")
 
 
 def save_trip():
@@ -262,7 +262,7 @@ def last_trip():
 
 def reset():
     for k in ("plan", "texts", "teaser", "step", "revealed", "meta", "peek", "replan_msg",
-              "mission", "photos", "teams", "active", "arrivals", "team_pick", "stage"):
+              "mission", "photos", "teams", "active", "arrivals", "team_pick", "stage", "celebrated"):
         ss.pop(k, None)
     tid = ss.pop("trip_id", None)
     if tid:
@@ -454,7 +454,9 @@ if racing:
             + ui.pills(status) + '</div>')
 
 if i >= n:
-    st.balloons()
+    if not ss.get("celebrated"):  # once per trip, not on every reload of the finished trip
+        st.balloons()
+        ss.celebrated = True
     km = sum(haversine_km(points[k], points[k + 1]) for k in range(len(points) - 1))
     st.html(ui.passport(plan.stops, ss.meta.get("date", ""), ss.meta["mood"], km,
                         (plan.end_min - plan.start_min) / 60, min_to_hhmm))
