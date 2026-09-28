@@ -40,6 +40,11 @@ THEMES = {
     "traditional": ("🏯 Traditional Korea", {"traditional": 5, "calm": 1}),
     "kculture": ("🎤 K-Culture & Trendy", {"kculture": 4, "trendy": 3}),
     "night": ("🌃 Night Views", {"night": 5, "landmark": 1}),
+    "romantic": ("💑 Date & Romance", {"romantic": 5, "night": 1}),
+    "photo": ("📸 Photo Spots", {"photo": 5, "trendy": 1}),
+    "shopping": ("🛍️ Shopping", {"shopping": 5, "food": 1}),
+    "rainy": ("🌧️ Rainy Day", {"indoor": 5, "calm": 1}),
+    "family": ("👨‍👩‍👧 Family & Kids", {"family": 5, "nature": 1}),
 }
 
 # Kinds that only show up on request (or, for restaurants/cafés, on the Foodie theme).
