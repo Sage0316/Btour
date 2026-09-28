@@ -18,7 +18,6 @@ MODELS = [
         os.getenv("NEMOTRON_MODEL"),
         "nvidia/nemotron-3.5-lightning-30b-a3b",
         "nvidia/nemotron-3-super-120b-a12b",
-        "nvidia/nemotron-nano-3-30b-a3b",
     ] if m
 ]
 
@@ -52,13 +51,17 @@ def _chat(system, user, max_tokens=2500, temperature=0.4, models=None):
     err = None
     for model in models or MODELS:
         try:
-            r = requests.post(BASE_URL, headers=headers, timeout=60, json={
+            body = {
                 "model": model,
                 "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": user}],
                 "temperature": temperature,
                 "max_tokens": max_tokens,
-            })
+            }
+            if model.startswith("nvidia/nemotron"):
+                # Nemotron reasons at length by default (70s+); we only need the JSON answer.
+                body["chat_template_kwargs"] = {"enable_thinking": False}
+            r = requests.post(BASE_URL, headers=headers, timeout=60, json=body)
             if r.status_code in (401, 403):
                 raise RuntimeError(f"NVIDIA API key rejected ({r.status_code})")
             r.raise_for_status()
@@ -140,7 +143,7 @@ def write_hints(stops, lang, mood, difficulty="Medium"):
     )
     data = _json(_chat(system, user, temperature=0.7))
     if not data:
-        return None, None
+        raise RuntimeError(f"{last_model_used} returned no JSON")
     by_id = {s.poi["id"]: s.poi for s in stops}
     out = {}
     for item in data.get("stops", []):
