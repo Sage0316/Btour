@@ -110,14 +110,17 @@ def leaks(text, poi):
 
 
 DIFFICULTY = {
-    "Easy": "Make each hint fairly direct: say what kind of place it is and one distinctive feature.",
-    "Medium": "Make each hint intriguing but solvable.",
-    "Hard": "Make each hint a cryptic riddle built on metaphor; avoid obvious category words.",
+    "Easy": ("Say plainly what kind of place it is and two things the traveler will see there. "
+             "No metaphors."),
+    "Medium": ("Name two concrete things the traveler will SEE on arrival (buildings, objects, food, "
+               "people doing something) so they can recognize it. Plain words, at most one light image."),
+    "Hard": "Make it a cryptic riddle built on metaphor; avoid obvious category words.",
 }
 
 
-HINT_SYSTEM = ("You write playful riddle-style clues for a 'blind trip' in Seoul, where the "
-               "traveler must NOT know the destination until arrival. Reply with JSON only.")
+HINT_SYSTEM = ("You write clues for a 'blind trip' in Seoul: the traveler must NOT know the destination "
+               "until arrival, but must be able to recognize it when they get there. Write in plain, "
+               "concrete language a tourist can act on, not poetry. Reply with JSON only.")
 
 
 def _one_stop(stop, lang, mood, difficulty):
@@ -127,7 +130,7 @@ def _one_stop(stop, lang, mood, difficulty):
         f"Traveler mood: {mood}\nWrite in: {lang}\n"
         f"Place: {p['name_en']} | facts: {p['reveal']} | tip: {p['tip']}{walk}\n\n"
         'Return {"hint": "...", "reveal": "...", "tip": "..."' + (', "walk": "..."' if walk else "") + "}.\n"
-        '- "hint": 1-2 intriguing sentences about what the traveler will experience. NEVER include the '
+        '- "hint": 1-2 short sentences describing what the traveler will find there. NEVER include the '
         f"place name, neighborhood, district, station, or any identifying proper noun. {DIFFICULTY.get(difficulty, '')}\n"
         '- "reveal": 2 sentences introducing the place by name, shown after arrival.\n'
         '- "tip": 1 practical sentence.'

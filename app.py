@@ -480,7 +480,8 @@ else:
                             f"{MODE_ICON[stop.mode]} ~{stop.travel_min} min by {stop.mode}",
                             f"arrive ≈ {min_to_hhmm(stop.arrive)}{wait}",
                             f"stay ≈ {stop.poi['stay']} min"], tone)
-                + f'<p class="bt-hint">🔒 “{ui.text(text_for(stop, "hint"))}”</p>'
+                + '<p class="bt-label" style="color:inherit;opacity:.75;margin:20px 0 0">🔒 What’s waiting for you</p>'
+                + f'<p class="bt-hint" style="margin-top:6px">“{ui.text(text_for(stop, "hint"))}”</p>'
                 + (f'<p class="bt-body" style="color:inherit;opacity:.9">💡 {ui.text(easy_clue(stop, points[i]))}</p>'
                    if difficulty == "Easy" else "")
                 + (f'<p class="bt-body" style="color:inherit;margin-top:12px">🆘 Peeked: <b>{ui.text(stop.poi["name_en"])}</b> · '
@@ -502,6 +503,9 @@ else:
             speech_lang = ss.meta["lang"] if stop.poi["id"] in ss.texts else "English"
             st.iframe(ui.speak_button(speech_text, speech_lang, color in ui.DARK_CARDS), height=44)
             if not walking:
+                st.html('<div class="bt-frag"><b>🧭 How to get there</b><br>'
+                        f'① Open Google Maps to <b>{ui.text(appr["label"])}</b><br>'
+                        '② When you get there, tap <b>“I’m in the area”</b> for walking directions</div>')
                 st.link_button(f"🧭 Get to the area: {appr['label']}", gmaps_link(appr["pt"]), width="stretch")
                 if st.button("🚶 I'm in the area — show the walking clue", type="primary", width="stretch"):
                     ss.stage[stop.poi["id"]] = "walk"
