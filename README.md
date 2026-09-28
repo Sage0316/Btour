@@ -1,9 +1,15 @@
 # 📦 Unboxing Seoul (언박싱 서울)
 
+**A blind-trip planner for international visitors to Seoul: choose a mood, not a destination.**
+
 외국인 여행자가 **무드(테마)만 고르면**, AI가 목적지를 숨긴 채 서울 동선을 짜 주는 **블라인드 여행 웹앱**.
 여행자는 힌트와 구글맵만 따라가고, 장소는 도착하는 순간 상자를 열 듯 공개된다.
 
 **NVIDIA 해커톤 · 팀 투니버스** — 윤지혜(팀장), 이정후
+
+## Why this matters
+
+Seoul offers endless places to explore, but international visitors often face choice overload and information fatigue. Unboxing Seoul hands those decisions to AI, leaving travelers with the excitement of discovery.
 
 ## 실행
 
