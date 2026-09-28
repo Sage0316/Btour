@@ -76,6 +76,19 @@ CSS = f"""
 .bt-footer p {{ font-size: 14px; color: var(--muted); margin: 0; }}
 .bt-footer .bt-title-md {{ color: var(--ink); }}
 
+/* ---------- passport ---------- */
+.bt-passport {{ background: var(--teal); color: var(--on-dark); border-radius: var(--r-xl); padding: 32px; }}
+.bt-passport .bt-label {{ color: var(--mint); }}
+.bt-passport h2 {{ color: var(--on-dark); }}
+.bt-stats {{ display: flex; gap: 24px; flex-wrap: wrap; margin: 16px 0 24px; font-size: 14px; opacity: .85; }}
+.bt-stamps {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }}
+.bt-stamp {{ border: 2px dashed currentColor; border-radius: var(--r-lg); padding: 14px; text-align: center;
+            background: var(--canvas); }}
+.bt-stamp .n {{ font-size: 12px; font-weight: 600; letter-spacing: 1.5px; }}
+.bt-stamp .en {{ font-size: 14px; font-weight: 600; line-height: 1.3; margin: 6px 0 2px; color: var(--ink); }}
+.bt-stamp .ko {{ font-family: 'Noto Sans KR', sans-serif; font-weight: 700; font-size: 16px; color: var(--ink); }}
+.bt-stamp .t {{ font-size: 12px; color: var(--muted); margin-top: 4px; }}
+
 /* ---------- keyed Streamlit containers ---------- */
 .st-key-planner {{ background: var(--surface-card); border-radius: var(--r-lg); padding: 32px; }}
 .st-key-judge {{ background: var(--surface-card); border-radius: var(--r-lg); padding: 32px; margin-top: 48px; }}
@@ -221,6 +234,60 @@ def footer():
   <div><p class="bt-title-md">🙈 Seoul Blind Trip</p><p>Pick a mood. We hide the destinations.</p></div>
   <div><p>Built with NVIDIA Nemotron · cuOpt routing</p><p>Places, hours and travel times are approximate.</p></div>
 </div>
+"""
+
+
+STAMP_INK = {"pink": "#ff4d8b", "teal": "#1a3a3a", "lavender": "#7a62c9", "peach": "#e0703c",
+             "ochre": "#b8871a", "cream": "#6a6a6a"}
+
+
+def passport(stops, date_label, mood, km, hours, fmt_time):
+    stamps = "".join(
+        f'<div class="bt-stamp" style="color:{STAMP_INK[CARD_COLORS[k % len(CARD_COLORS)]]};'
+        f'transform:rotate({(-3, 2, -1, 3, -2, 1)[k % 6]}deg)">'
+        f'<div class="n">STOP {k + 1}</div><div class="en">{escape(s.poi["name_en"])}</div>'
+        f'<div class="ko">{escape(s.poi["name_ko"])}</div><div class="t">{fmt_time(s.arrive)}</div></div>'
+        for k, s in enumerate(stops))
+    return f"""
+<div class="bt-passport">
+  <p class="bt-label">Seoul Blind Trip · Passport</p>
+  <h2 class="bt-display-sm">Trip complete 🎉</h2>
+  <div class="bt-stats"><span>📅 {escape(date_label)}</span><span>✨ {escape(mood)}</span>
+    <span>📍 {len(stops)} secret stops</span><span>🚶 {km:.1f} km</span><span>⏱️ {hours:.1f} h</span></div>
+  <div class="bt-stamps">{stamps}</div>
+</div>
+"""
+
+
+SPEECH_LANG = {"English": "en-US", "日本語": "ja-JP", "简体中文": "zh-CN", "Español": "es-ES",
+               "Français": "fr-FR", "한국어": "ko-KR"}
+
+
+def _js_string(value):
+    """JSON-encode for inline <script>; escape <, >, & so text can't close the tag."""
+    import json
+    return (json.dumps(value).replace("<", "\\u003c").replace(">", "\\u003e")
+            .replace("&", "\\u0026"))
+
+
+def speak_button(text, lang, dark):
+    """Small in-browser text-to-speech button (Web Speech API).
+
+    `text` may come from the LLM, so it only ever enters the page via _js_string.
+    """
+    color = "#ffffff" if dark else "#0a0a0a"
+    return f"""
+<button id="say" style="font:600 14px Inter,sans-serif;color:{color};background:transparent;
+  border:1px solid {color};border-radius:12px;padding:8px 16px;cursor:pointer;width:100%;min-height:40px">
+  🔊 Read the clue aloud</button>
+<script>
+document.getElementById('say').onclick = () => {{
+  const u = new SpeechSynthesisUtterance({_js_string(text)});
+  u.lang = {_js_string(SPEECH_LANG.get(lang, "en-US"))}; u.rate = 0.95;
+  speechSynthesis.cancel(); speechSynthesis.speak(u);
+}};
+</script>
+<style>body{{margin:0;background:transparent}}</style>
 """
 
 

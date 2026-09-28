@@ -227,7 +227,7 @@ if "plan" not in ss:
                       meta={"mood": mood, "source": source, "lang": lang, "scores": scores,
                             "hours": hours, "weekday": day.weekday(), "max_stops": max_stops,
                             "addons": addons, "foodie": foodie, "backend": backend,
-                            "difficulty": difficulty,
+                            "difficulty": difficulty, "date": day.strftime("%a %d %b %Y"),
                             "weather": weather.describe(forecast) + (" (simulated)" if demo_rain else ""),
                             "rain_adapted": bool(adapt_weather and forecast and forecast["rainy"]
                                                  and theme != "rainy")})
@@ -262,13 +262,9 @@ if ss.get("replan_msg"):
 
 if i >= n:
     st.balloons()
-    rows = "".join(
-        f'<p class="bt-body" style="margin:10px 0"><b>{k}. {ui.text(s.poi["name_en"])}</b> '
-        f'<span style="font-family:\'Noto Sans KR\',sans-serif">{ui.text(s.poi["name_ko"])}</span> · '
-        f'{min_to_hhmm(s.arrive)}–{min_to_hhmm(s.depart)} {ui.pills([badge(s)])}</p>'
-        for k, s in enumerate(plan.stops, 1))
-    st.html(f'<div class="bt-band"><p class="bt-label">Trip complete</p>'
-            f'<h2 class="bt-display-sm">Here’s where you went 🎉</h2>{rows}</div>')
+    km = sum(haversine_km(points[k], points[k + 1]) for k in range(len(points) - 1))
+    st.html(ui.passport(plan.stops, ss.meta.get("date", ""), ss.meta["mood"], km,
+                        (plan.end_min - plan.start_min) / 60, min_to_hhmm))
     route_map(points, ["Start"] + [s.poi["name_en"] for s in plan.stops])
     if st.button("Plan another blind trip", type="primary", width="stretch"):
         reset()
@@ -297,6 +293,9 @@ else:
                 + (f'<p class="bt-body" style="color:inherit;margin-top:12px">🆘 Peeked: <b>{ui.text(stop.poi["name_en"])}</b> · '
                    f'<span style="font-family:\'Noto Sans KR\',sans-serif">{ui.text(stop.poi["name_ko"])}</span></p>'
                    if peeked else ""))
+            speech_lang = ss.meta["lang"] if stop.poi["id"] in ss.texts else "English"
+            st.iframe(ui.speak_button(text_for(stop, "hint"), speech_lang, color in ui.DARK_CARDS),
+                      height=44)
             c1, c2 = st.columns(2)
             c1.link_button("🧭 Google Maps", gmaps_link(points[i], here), width="stretch")
             c2.link_button("🗺️ Kakao Map", kakao_link(f"Secret Stop {i + 1}", here), width="stretch")
