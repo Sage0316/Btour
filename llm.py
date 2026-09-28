@@ -123,11 +123,25 @@ HINT_SYSTEM = ("You write clues for a 'blind trip' in Seoul: the traveler must N
                "concrete language a tourist can act on, not poetry. Reply with JSON only.")
 
 
+LANG_NAMES = {"日本語": "Japanese (日本語)", "简体中文": "Simplified Chinese (简体中文)", "Español": "Spanish",
+              "Français": "French", "한국어": "Korean (한국어)", "English": "English"}
+CJK = {"日本語": (0x3040, 0x30FF), "简体中文": (0x4E00, 0x9FFF), "한국어": (0xAC00, 0xD7A3)}
+
+
+def _in_language(text, lang):
+    """Cheap check that a CJK-language reply is actually written in that script."""
+    if lang not in CJK or not text:
+        return True
+    lo, hi = CJK[lang]
+    return sum(lo <= ord(c) <= hi for c in text) >= 3
+
+
 def _one_stop(stop, lang, mood, difficulty):
     p = stop.poi
+    lang_name = LANG_NAMES.get(lang, lang)
     walk = f"\nWalking clue to translate: {p['approach']['clue']}" if p.get("approach") else ""
     user = (
-        f"Traveler mood: {mood}\nWrite in: {lang}\n"
+        f"Traveler mood: {mood}\nWrite in: {lang_name}\n"
         f"Place: {p['name_en']} | facts: {p['reveal']} | tip: {p['tip']}{walk}\n\n"
         'Return {"hint": "...", "reveal": "...", "tip": "..."' + (', "walk": "..."' if walk else "") + "}.\n"
         '- "hint": 1-2 short sentences describing what the traveler will find there. NEVER include the '
@@ -135,8 +149,16 @@ def _one_stop(stop, lang, mood, difficulty):
         '- "reveal": 2 sentences introducing the place by name, shown after arrival.\n'
         '- "tip": 1 practical sentence.'
         + ('\n- "walk": translate the walking clue faithfully, keeping directions exact.' if walk else "")
+        + "\nDo not use superlatives or facts that single the place out (oldest, biggest, tallest, most famous)."
+        + f"\nIMPORTANT: write every field in {lang_name} only."
     )
-    item = _json(_chat(HINT_SYSTEM, user, max_tokens=600, temperature=0.7, timeout=40)) or {}
+    item = {}
+    for _ in range(2):  # the model occasionally ignores the language; retry once
+        item = _json(_chat(HINT_SYSTEM, user, max_tokens=600, temperature=0.7, timeout=40)) or {}
+        if _in_language(item.get("hint"), lang):
+            break
+    if not _in_language(item.get("hint"), lang):
+        return {}
     if item.get("hint") and leaks(item["hint"], p):  # spoiler guard: keep the curated hint
         item["hint"] = None
     if item.get("walk") and leaks(item["walk"], p):
@@ -145,7 +167,7 @@ def _one_stop(stop, lang, mood, difficulty):
 
 
 def _teaser(stops, lang, mood):
-    user = (f"Traveler mood: {mood}. In {lang}, write ONE exciting sentence hyping a {len(stops)}-stop "
+    user = (f"Traveler mood: {mood}. In {LANG_NAMES.get(lang, lang)}, write ONE exciting sentence hyping a {len(stops)}-stop "
             'mystery trip in Seoul without naming any place. Return {"teaser": "..."}')
     return (_json(_chat(HINT_SYSTEM, user, max_tokens=150, temperature=0.8, timeout=40)) or {}).get("teaser")
 
