@@ -1,4 +1,4 @@
-"""Seoul Blind Trip — pick a mood, we hide the destinations, you follow the map.
+"""Unboxing Seoul (언박싱 서울) — pick a mood, we hide the destinations, you follow the map.
 
 Run:  streamlit run app.py        (from this folder, so .streamlit/config.toml applies)
 Env:  NVIDIA_API_KEY (build.nvidia.com) enables Nemotron scoring + multilingual hints.
@@ -43,7 +43,7 @@ COMPASS = ["north", "north-east", "east", "south-east", "south", "south-west", "
 ARROWS = ["↑", "↗", "→", "↘", "↓", "↙", "←", "↖"]
 WALKABLE_KM = 0.8   # closer than this, skip "get to the area" and go straight to the walking clue
 
-st.set_page_config(page_title="Seoul Blind Trip", page_icon="🙈", layout="wide")
+st.set_page_config(page_title="Unboxing Seoul", page_icon="📦", layout="wide")
 st.html(ui.CSS)
 
 ss = st.session_state
@@ -346,7 +346,7 @@ if "plan" not in ss:
                              help="City tour bus, river cruise, hanbok rental, cable car, karaoke…")
         addons = [k for k, on in (("food", want_food and not foodie), ("activity", want_act)) if on]
 
-        if st.button("🎲 Start my blind trip", type="primary", width="stretch"):
+        if st.button("📦 Start unboxing Seoul", type="primary", width="stretch"):
             mood = custom.strip() or THEMES[theme][0]
             with st.status("Planning your secret route…", expanded=True) as status:
                 scores, source = tag_scores(pois, theme), "theme tags"
@@ -427,7 +427,7 @@ plan, i = ss.plan, ss.step
 n = len(plan.stops)
 points = [plan.start_point] + [(s.poi["lat"], s.poi["lng"]) for s in plan.stops]
 
-st.html(f'<p class="bt-label">Seoul · Blind Trip · from {ui.text(plan.start_name)}</p>'
+st.html(f'<p class="bt-label">📦 Unboxing Seoul · from {ui.text(plan.start_name)}</p>'
         f'<h1 class="bt-display-md">{TEAMS[ss.active] + "’s secret route" if racing else "Your secret route"}</h1>'
         f'<div class="bt-band" style="margin-top:24px"><p class="bt-title-md">✨ '
         f'{ui.text(ss.teaser or f"{n} secret stops are waiting for you. Trust the map.")}</p>'
@@ -459,7 +459,7 @@ if i >= n:
     st.html(ui.passport(plan.stops, ss.meta.get("date", ""), ss.meta["mood"], km,
                         (plan.end_min - plan.start_min) / 60, min_to_hhmm))
     route_map(points, ["Start"] + [s.poi["name_en"] for s in plan.stops])
-    if st.button("Plan another blind trip", type="primary", width="stretch"):
+    if st.button("Unbox another trip", type="primary", width="stretch"):
         reset()
         st.rerun()
 else:
@@ -511,7 +511,7 @@ else:
                     ss.stage[stop.poi["id"]] = "walk"
                     st.rerun()
             if walking and not ss.get("mission") and st.button(
-                    "📍 I've arrived — " + ("take the photo mission" if ss.meta.get("missions") else "reveal!"),
+                    "📍 I've arrived — " + ("take the photo mission" if ss.meta.get("missions") else "unbox it!"),
                     type="primary", width="stretch"):
                 ss.replan_msg = None
                 if stop.group == "meet":
@@ -570,7 +570,7 @@ else:
     else:
         with st.container(key="reveal"):
             st.html(
-                f'<p class="bt-label">You found it · stop {i + 1} of {n}</p>'
+                f'<p class="bt-label">📦 Unboxed · stop {i + 1} of {n}</p>'
                 f'<h2 class="bt-display-md">{ui.text(stop.poi["name_en"])}</h2>'
                 f'<p class="bt-ko">{ui.text(stop.poi["name_ko"])}</p>'
                 f'<p class="bt-caption">Show this to locals if you need directions</p>'

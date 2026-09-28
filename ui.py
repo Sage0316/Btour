@@ -212,7 +212,7 @@ def hero():
     return f"""
 <div class="bt-hero">
   <div>
-    <p class="bt-label">Seoul · Blind Trip</p>
+    <p class="bt-label">📦 Unboxing Seoul</p>
     <h1 class="bt-display-xl">Pick a mood.<br>We hide the destinations.</h1>
     <p class="bt-lead">Follow the map one secret stop at a time. Each place stays a mystery until you arrive.</p>
   </div>
@@ -246,7 +246,7 @@ def how_it_works():
 def footer():
     return """
 <div class="bt-footer">
-  <div><p class="bt-title-md">🙈 Seoul Blind Trip</p><p>Pick a mood. We hide the destinations.</p></div>
+  <div><p class="bt-title-md">📦 Unboxing Seoul</p><p>Pick a mood. Unbox Seoul one secret stop at a time.</p></div>
   <div><p>Built with NVIDIA Nemotron · cuOpt routing</p><p>Places, hours and travel times are approximate.</p></div>
 </div>
 """
@@ -265,7 +265,7 @@ def passport(stops, date_label, mood, km, hours, fmt_time):
         for k, s in enumerate(stops))
     return f"""
 <div class="bt-passport">
-  <p class="bt-label">Seoul Blind Trip · Passport</p>
+  <p class="bt-label">Unboxing Seoul · Passport</p>
   <h2 class="bt-display-sm">Trip complete 🎉</h2>
   <div class="bt-stats"><span>📅 {escape(date_label)}</span><span>✨ {escape(mood)}</span>
     <span>📍 {len(stops)} secret stops</span><span>🚶 {km:.1f} km</span><span>⏱️ {hours:.1f} h</span></div>
