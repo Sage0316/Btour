@@ -45,7 +45,7 @@ VISION_MODELS = [
 ]
 
 
-def _chat(system, user, max_tokens=2500, temperature=0.4, models=None):
+def _chat(system, user, max_tokens=2500, temperature=0.4, models=None, timeout=60):
     global last_model_used
     headers = {"Authorization": f"Bearer {os.environ['NVIDIA_API_KEY']}"}
     err = None
@@ -61,7 +61,7 @@ def _chat(system, user, max_tokens=2500, temperature=0.4, models=None):
             if model.startswith("nvidia/nemotron"):
                 # Nemotron reasons at length by default (70s+); we only need the JSON answer.
                 body["chat_template_kwargs"] = {"enable_thinking": False}
-            r = requests.post(BASE_URL, headers=headers, timeout=60, json=body)
+            r = requests.post(BASE_URL, headers=headers, timeout=timeout, json=body)
             if r.status_code in (401, 403):
                 raise RuntimeError(f"NVIDIA API key rejected ({r.status_code})")
             r.raise_for_status()
@@ -91,7 +91,7 @@ def score_places(mood, pois):
     user = (f'Traveler mood: "{mood}"\n\nPlaces:\n{catalog}\n\n'
             'Return {"scores": {"<id>": <integer 0-10>, ...}} covering every id. '
             "10 = perfect match, 0 = wrong vibe.")
-    data = _json(_chat(system, user, temperature=0.2))
+    data = _json(_chat(system, user, max_tokens=1500, temperature=0.2, timeout=45))
     scores = (data or {}).get("scores", {})
     ids = {p["id"] for p in pois}
     return {k: max(0, min(10, int(v))) for k, v in scores.items() if k in ids} or None
@@ -116,46 +116,60 @@ DIFFICULTY = {
 }
 
 
-def write_hints(stops, lang, mood, difficulty="Medium"):
-    """Spoiler-free hints + reveal text in the traveler's language.
+HINT_SYSTEM = ("You write playful riddle-style clues for a 'blind trip' in Seoul, where the "
+               "traveler must NOT know the destination until arrival. Reply with JSON only.")
 
-    Returns {id: {"hint", "reveal", "tip"}} and a one-line teaser, or (None, None).
-    """
-    lines = "\n".join(
-        f'{i + 1}. id={s.poi["id"]} | {s.poi["name_en"]} | facts: {s.poi["reveal"]} '
-        f'Tip: {s.poi["tip"]}'
-        + (f' | walking clue: {s.poi["approach"]["clue"]}' if s.poi.get("approach") else "")
-        for i, s in enumerate(stops)
-    )
-    system = ("You write playful riddle-style clues for a 'blind trip' in Seoul, where the "
-              "traveler must NOT know the destination until arrival. Reply with JSON only.")
+
+def _one_stop(stop, lang, mood, difficulty):
+    p = stop.poi
+    walk = f"\nWalking clue to translate: {p['approach']['clue']}" if p.get("approach") else ""
     user = (
-        f"Traveler mood: {mood}\nWrite in: {lang}\n\nStops in order:\n{lines}\n\n"
-        "For each stop write:\n"
-        '- "hint": 1-2 intriguing sentences about what the traveler will experience. '
-        "NEVER include the place name, neighborhood, district, station, or any proper noun "
-        f"that identifies it. {DIFFICULTY.get(difficulty, '')}\n"
+        f"Traveler mood: {mood}\nWrite in: {lang}\n"
+        f"Place: {p['name_en']} | facts: {p['reveal']} | tip: {p['tip']}{walk}\n\n"
+        'Return {"hint": "...", "reveal": "...", "tip": "..."' + (', "walk": "..."' if walk else "") + "}.\n"
+        '- "hint": 1-2 intriguing sentences about what the traveler will experience. NEVER include the '
+        f"place name, neighborhood, district, station, or any identifying proper noun. {DIFFICULTY.get(difficulty, '')}\n"
         '- "reveal": 2 sentences introducing the place by name, shown after arrival.\n'
-        '- "tip": 1 practical sentence.\n'
-        '- "walk": only if a walking clue is given, translate it faithfully (keep directions exact).\n'
-        'Also write "teaser": one sentence hyping the whole mystery trip without naming places.\n'
-        'Format: {"teaser": "...", "stops": [{"id": "...", "hint": "...", "reveal": "...", "tip": "...", "walk": "..."}]}'
+        '- "tip": 1 practical sentence.'
+        + ('\n- "walk": translate the walking clue faithfully, keeping directions exact.' if walk else "")
     )
-    data = _json(_chat(system, user, temperature=0.7))
-    if not data:
-        raise RuntimeError(f"{last_model_used} returned no JSON")
-    by_id = {s.poi["id"]: s.poi for s in stops}
-    out = {}
-    for item in data.get("stops", []):
-        poi = by_id.get(item.get("id"))
-        if not poi or not item.get("hint"):
-            continue
-        if leaks(item["hint"], poi):  # spoiler guard: keep the curated hint
-            item["hint"] = None
-        if item.get("walk") and leaks(item["walk"], poi):
-            item["walk"] = None
-        out[poi["id"]] = item
-    return out, data.get("teaser")
+    item = _json(_chat(HINT_SYSTEM, user, max_tokens=600, temperature=0.7, timeout=40)) or {}
+    if item.get("hint") and leaks(item["hint"], p):  # spoiler guard: keep the curated hint
+        item["hint"] = None
+    if item.get("walk") and leaks(item["walk"], p):
+        item["walk"] = None
+    return item
+
+
+def _teaser(stops, lang, mood):
+    user = (f"Traveler mood: {mood}. In {lang}, write ONE exciting sentence hyping a {len(stops)}-stop "
+            'mystery trip in Seoul without naming any place. Return {"teaser": "..."}')
+    return (_json(_chat(HINT_SYSTEM, user, max_tokens=150, temperature=0.8, timeout=40)) or {}).get("teaser")
+
+
+def write_hints(stops, lang, mood, difficulty="Medium"):
+    """Spoiler-free hints + reveal text in the traveler's language, one request per stop in parallel.
+
+    Returns ({id: {"hint", "reveal", "tip", "walk"}}, teaser).
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    def safe(fn, *args):
+        try:
+            return fn(*args)
+        except Exception as e:
+            return e
+
+    with ThreadPoolExecutor(max_workers=min(6, len(stops) + 1)) as pool:
+        teaser_job = pool.submit(safe, _teaser, stops, lang, mood)
+        jobs = [pool.submit(safe, _one_stop, s, lang, mood, difficulty) for s in stops]
+        results = [j.result() for j in jobs]
+        teaser = teaser_job.result()
+    out = {s.poi["id"]: r for s, r in zip(stops, results) if isinstance(r, dict) and r}
+    if not out:
+        errors = [r for r in results if isinstance(r, Exception)]
+        raise RuntimeError(f"no clues generated ({errors[0] if errors else 'empty replies'})")
+    return out, teaser if isinstance(teaser, str) else None
 
 
 def _jpeg_data_url(image_bytes, max_side=768):

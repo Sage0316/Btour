@@ -6,15 +6,26 @@ Env:  NVIDIA_API_KEY (build.nvidia.com) enables Nemotron scoring + multilingual 
 
 import datetime as dt
 import math
+import os
 import urllib.parse
 
 import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
-import llm
-import ui
-import weather
+from pathlib import Path
+
+# Load NVIDIA_API_KEY from a local .env (git-ignored) so the key is typed only once.
+_env = Path(__file__).parent / ".env"
+if _env.exists():
+    for _line in _env.read_text().splitlines():
+        if "=" in _line and not _line.lstrip().startswith("#"):
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
+
+import llm  # noqa: E402  (reads NVIDIA_API_KEY)
+import ui  # noqa: E402
+import weather  # noqa: E402
 from planner import (START_POINTS, THEMES, cuopt_available, haversine_km, load_pois,
                      min_to_hhmm, plan_race, plan_trip, tag_scores)
 
