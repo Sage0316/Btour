@@ -96,6 +96,7 @@ CSS = f"""
 
 /* ---------- keyed Streamlit containers ---------- */
 .st-key-planner {{ background: var(--surface-card); border-radius: var(--r-lg); padding: 32px; }}
+.st-key-resume {{ background: var(--mint); border-radius: var(--r-lg); padding: 20px 24px; margin-bottom: 24px; }}
 .st-key-judge {{ background: var(--surface-card); border-radius: var(--r-lg); padding: 32px; margin-top: 48px; }}
 .st-key-reveal {{ background: var(--surface-card); border-radius: var(--r-xl); padding: 32px; }}
 {"".join(f'''.st-key-stop-{c} {{ background: var(--{"surface-card" if c == "cream" else c}); border-radius: var(--r-xl); padding: 32px; }}

@@ -7,7 +7,11 @@ Env:  NVIDIA_API_KEY (build.nvidia.com) enables Nemotron scoring + multilingual 
 import datetime as dt
 import math
 import os
+import pickle
+import re
 import threading
+import time
+import uuid
 import urllib.parse
 
 import pandas as pd
@@ -215,10 +219,55 @@ def clues_in_background(stops, texts, meta):
     threading.Thread(target=work, daemon=True).start()
 
 
+# ---------- save & resume (phones reload the page after visiting Google Maps) ----------
+
+TRIPS = Path(__file__).parent / ".trips"   # git-ignored, local only
+PERSIST = ("plan", "texts", "teaser", "step", "revealed", "meta", "peek", "replan_msg", "mission",
+           "photos", "stage", "teams", "active", "arrivals", "team_pick")
+
+
+def save_trip():
+    tid = ss.setdefault("trip_id", uuid.uuid4().hex[:8])
+    if st.query_params.get("trip") != tid:
+        st.query_params["trip"] = tid
+    TRIPS.mkdir(exist_ok=True)
+    tmp = TRIPS / f"{tid}.tmp"
+    tmp.write_bytes(pickle.dumps({k: ss[k] for k in PERSIST if k in ss}))
+    tmp.replace(TRIPS / f"{tid}.pkl")
+
+
+def load_trip(tid):
+    """Restore a saved trip. Only 8-hex ids we generated ourselves are accepted."""
+    if not re.fullmatch(r"[0-9a-f]{8}", tid or ""):
+        return False
+    path = TRIPS / f"{tid}.pkl"
+    if not path.exists():
+        return False
+    ss.update(pickle.loads(path.read_bytes()))
+    ss.trip_id = tid
+    stops = ss.plan.stops + (ss.teams["B"]["plan"].stops if ss.get("teams") else [])
+    clues_in_background(stops, ss.texts, ss.meta)   # finish any clues lost with the old page
+    return True
+
+
+def last_trip():
+    """Most recent trip saved in the last 24 h, as (id, minutes ago)."""
+    files = sorted(TRIPS.glob("*.pkl"), key=lambda f: f.stat().st_mtime, reverse=True) if TRIPS.exists() else []
+    for f in files[:1]:
+        age = (time.time() - f.stat().st_mtime) / 60
+        if age < 24 * 60:
+            return f.stem, int(age)
+    return None
+
+
 def reset():
     for k in ("plan", "texts", "teaser", "step", "revealed", "meta", "peek", "replan_msg",
               "mission", "photos", "teams", "active", "arrivals", "team_pick", "stage"):
         ss.pop(k, None)
+    tid = ss.pop("trip_id", None)
+    if tid:
+        (TRIPS / f"{tid}.pkl").unlink(missing_ok=True)
+    st.query_params.clear()
 
 
 # ---------- sidebar ----------
@@ -238,9 +287,20 @@ with st.sidebar:
 
 # ---------- setup ----------
 
+if "plan" not in ss and st.query_params.get("trip"):
+    load_trip(st.query_params.get("trip"))
+
 if "plan" not in ss:
     st.html(ui.width_css(1120))
     st.html(ui.hero())
+    resume = last_trip()
+    if resume:
+        with st.container(key="resume"):
+            ago = "just now" if resume[1] < 1 else f"{resume[1]} min ago"
+            st.html(f'<p class="bt-label" style="margin:0">📍 Trip in progress · saved {ago}</p>')
+            if st.button("Continue your last trip", type="primary", width="stretch"):
+                load_trip(resume[0])
+                st.rerun()
 
     with st.container(key="planner"):
         st.html('<p class="bt-label">Choose your mood</p>')
@@ -553,4 +613,5 @@ if judge:
             for c in plan.candidates
         ]), hide_index=True, width="stretch")
 
+save_trip()
 st.html(ui.footer())
