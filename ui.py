@@ -8,13 +8,14 @@ TOKENS = {
     "surface-strong": "#ebe6d6", "hairline": "#e5e5e5",
     "ink": "#0a0a0a", "body-strong": "#1a1a1a", "body": "#3a3a3a",
     "muted": "#6a6a6a", "muted-soft": "#9a9a9a", "on-dark": "#ffffff",
-    "pink": "#ff4d8b", "teal": "#1a3a3a", "lavender": "#b8a4ed",
-    "peach": "#ffb084", "ochre": "#e8b94a", "mint": "#a4d4c5", "coral": "#ff6b5a",
+    # soft pastel card fills: calm on a phone screen, ink text on all of them
+    "pink": "#ffdbe6", "teal": "#d6eae3", "lavender": "#e6defa",
+    "peach": "#ffe4d2", "ochre": "#f7e8b8", "mint": "#a4d4c5", "coral": "#ff6b5a",
 }
 
 # Saturated card rotation; never the same color twice in a row.
 CARD_COLORS = ["pink", "teal", "lavender", "peach", "ochre", "cream"]
-DARK_CARDS = {"pink", "teal"}
+DARK_CARDS = set()  # all pastel cards take ink text
 
 _vars = "\n".join(f"  --{k}: {v};" for k, v in TOKENS.items())
 
@@ -55,8 +56,8 @@ CSS = f"""
 .bt-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 48px 0 0; }}
 .bt-card {{ border-radius: var(--r-xl); padding: 32px; color: var(--ink); }}
 .bt-card .bt-body {{ color: inherit; opacity: .85; margin-top: 8px; }}
-.bt-card.pink {{ background: var(--pink); color: var(--on-dark); }}
-.bt-card.teal {{ background: var(--teal); color: var(--on-dark); }}
+.bt-card.pink {{ background: var(--pink); }}
+.bt-card.teal {{ background: var(--teal); }}
 .bt-card.lavender {{ background: var(--lavender); }}
 .bt-card.peach {{ background: var(--peach); }}
 .bt-card.ochre {{ background: var(--ochre); }}
@@ -83,9 +84,7 @@ CSS = f"""
 .bt-footer .bt-title-md {{ color: var(--ink); }}
 
 /* ---------- passport ---------- */
-.bt-passport {{ background: var(--teal); color: var(--on-dark); border-radius: var(--r-xl); padding: 32px; }}
-.bt-passport .bt-label {{ color: var(--mint); }}
-.bt-passport h2 {{ color: var(--on-dark); }}
+.bt-passport {{ background: var(--teal); color: var(--ink); border-radius: var(--r-xl); padding: 32px; }}
 .bt-stats {{ display: flex; gap: 24px; flex-wrap: wrap; margin: 16px 0 24px; font-size: 14px; opacity: .85; }}
 .bt-stamps {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }}
 .bt-stamp {{ border: 2px dashed currentColor; border-radius: var(--r-lg); padding: 14px; text-align: center;
@@ -101,8 +100,6 @@ CSS = f"""
 .st-key-reveal {{ background: var(--surface-card); border-radius: var(--r-xl); padding: 32px; }}
 {"".join(f'''.st-key-stop-{c} {{ background: var(--{"surface-card" if c == "cream" else c}); border-radius: var(--r-xl); padding: 32px; }}
 ''' for c in CARD_COLORS)}
-.st-key-stop-pink, .st-key-stop-teal {{ color: var(--on-dark); }}
-.st-key-stop-pink [data-testid="stMarkdownContainer"] *, .st-key-stop-teal [data-testid="stMarkdownContainer"] * {{ color: var(--on-dark); }}
 /* cream widgets inside dark cards keep ink text */
 .st-key-stop-pink [data-testid="stExpander"] [data-testid="stMarkdownContainer"] *,
 .st-key-stop-teal [data-testid="stExpander"] [data-testid="stMarkdownContainer"] *,
@@ -130,8 +127,6 @@ CSS = f"""
 [class*="st-key-stop-"] [data-testid="stBaseButton-secondary"],
 [class*="st-key-stop-"] [data-testid="stPopover"] button {{
   background: transparent; border: 1px solid currentColor; color: inherit; min-height: 40px; border-radius: var(--r-md); }}
-.st-key-stop-pink [data-testid="stBaseLinkButton-secondary"] *,
-.st-key-stop-teal [data-testid="stBaseLinkButton-secondary"] * {{ color: var(--on-dark); }}
 
 [data-testid="stButtonGroup"] button {{ border-radius: var(--r-pill); padding: 8px 16px; min-height: 40px;
   background: transparent; border: 1px solid var(--hairline); color: var(--muted); }}
