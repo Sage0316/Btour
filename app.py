@@ -7,6 +7,7 @@ Env:  NVIDIA_API_KEY (build.nvidia.com) enables Nemotron scoring + multilingual 
 import datetime as dt
 import math
 import os
+import threading
 import urllib.parse
 
 import pandas as pd
@@ -168,12 +169,7 @@ def replan(i, delay):
     if new:
         plan.backend, plan.solve_ms = new.backend, new.solve_ms
     after = {s.poi["id"] for s in new_stops}
-    if new_stops and llm.available():
-        try:
-            texts, _ = llm.write_hints(new_stops, meta["lang"], meta["mood"], meta["difficulty"])
-            ss.texts.update(texts or {})
-        except Exception:
-            pass
+    clues_in_background(new_stops, ss.texts, meta)
     ss.peek = set()
     ss.replan_msg = (f"⏰ Re-planned from {min_to_hhmm(now)}"
                      + (f" in {new.solve_ms:.0f} ms" if new else "")
@@ -197,6 +193,26 @@ def switch_team(new):
 def team_progress(team):
     state = ss if team == ss.active else ss.teams[team]
     return state["step"], len(state["plan"].stops)
+
+
+def clues_in_background(stops, texts, meta):
+    """Write the remaining clues while the traveler is on the move.
+
+    The thread only mutates the `texts` dict it was given (never st.*), so the page
+    picks each clue up on its next rerun; until then the curated English clue shows.
+    """
+    stops = [s for s in stops if s.poi["id"] not in texts]
+    if not stops or not llm.available():
+        return
+
+    def work():
+        try:
+            out, _ = llm.write_hints(stops, meta["lang"], meta["mood"], meta["difficulty"], teaser=False)
+            texts.update(out)
+        except Exception:
+            pass
+
+    threading.Thread(target=work, daemon=True).start()
 
 
 def reset():
@@ -274,7 +290,7 @@ if "plan" not in ss:
             mood = custom.strip() or THEMES[theme][0]
             with st.status("Planning your secret route…", expanded=True) as status:
                 scores, source = tag_scores(pois, theme), "theme tags"
-                if llm.available():
+                if llm.available() and custom.strip():  # preset themes are already well described by tags
                     st.write(f"🧠 Nemotron is reading {len(pois)} places for “{mood}”…")
                     try:
                         s = llm.score_places(mood, pois)
@@ -304,12 +320,12 @@ if "plan" not in ss:
                     st.stop()
 
                 texts, teaser = {}, None
+                all_stops = (plan.stops + race_plan.teams["B"].stops[:-1]) if race_plan else plan.stops
+                first = [plan.stops[0]] + ([race_plan.teams["B"].stops[0]] if race_plan else [])
                 if llm.available():
-                    st.write(f"✍️ Writing spoiler-free clues in {lang}…")
+                    st.write(f"✍️ Writing your first clue in {lang} (the rest are written while you travel)…")
                     try:
-                        all_stops = (plan.stops + race_plan.teams["B"].stops[:-1]) if race_plan else plan.stops
-                        texts, teaser = llm.write_hints(all_stops, lang, mood, difficulty)
-                        texts = texts or {}
+                        texts, teaser = llm.write_hints(first, lang, mood, difficulty)
                     except Exception as e:
                         st.write(f"⚠️ Using curated English clues ({e})")
                 status.update(label="Your secret route is ready!", state="complete")
@@ -329,6 +345,7 @@ if "plan" not in ss:
                             "weather": weather.describe(forecast) + (" (simulated)" if demo_rain else ""),
                             "rain_adapted": bool(adapt_weather and forecast and forecast["rainy"]
                                                  and theme != "rainy")})
+            clues_in_background(all_stops, ss.texts, ss.meta)
             st.rerun()
 
     st.html(ui.how_it_works())

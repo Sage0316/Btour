@@ -16,8 +16,8 @@ BASE_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 MODELS = [
     m for m in [
         os.getenv("NEMOTRON_MODEL"),
+        "nvidia/nemotron-3-super-120b-a12b",      # fastest in our timing (~3 s per clue)
         "nvidia/nemotron-3.5-lightning-30b-a3b",
-        "nvidia/nemotron-3-super-120b-a12b",
     ] if m
 ]
 
@@ -147,7 +147,7 @@ def _teaser(stops, lang, mood):
     return (_json(_chat(HINT_SYSTEM, user, max_tokens=150, temperature=0.8, timeout=40)) or {}).get("teaser")
 
 
-def write_hints(stops, lang, mood, difficulty="Medium"):
+def write_hints(stops, lang, mood, difficulty="Medium", teaser=True):
     """Spoiler-free hints + reveal text in the traveler's language, one request per stop in parallel.
 
     Returns ({id: {"hint", "reveal", "tip", "walk"}}, teaser).
@@ -161,10 +161,10 @@ def write_hints(stops, lang, mood, difficulty="Medium"):
             return e
 
     with ThreadPoolExecutor(max_workers=min(6, len(stops) + 1)) as pool:
-        teaser_job = pool.submit(safe, _teaser, stops, lang, mood)
+        teaser_job = pool.submit(safe, _teaser, stops, lang, mood) if teaser else None
         jobs = [pool.submit(safe, _one_stop, s, lang, mood, difficulty) for s in stops]
         results = [j.result() for j in jobs]
-        teaser = teaser_job.result()
+        teaser = teaser_job.result() if teaser_job else None
     out = {s.poi["id"]: r for s, r in zip(stops, results) if isinstance(r, dict) and r}
     if not out:
         errors = [r for r in results if isinstance(r, Exception)]
