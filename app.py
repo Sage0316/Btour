@@ -33,13 +33,13 @@ pois = load_pois()
 
 # ---------- helpers ----------
 
-def gmaps_link(a, b):
-    q = {"api": 1, "origin": f"{a[0]},{a[1]}", "destination": f"{b[0]},{b[1]}", "travelmode": "transit"}
+def gmaps_link(b):
+    """Google Maps directions from the phone's current location (no origin), by transit.
+
+    Coordinates only, so the place name isn't spelled out; Korea supports transit directions.
+    """
+    q = {"api": 1, "destination": f"{b[0]},{b[1]}", "travelmode": "transit"}
     return "https://www.google.com/maps/dir/?" + urllib.parse.urlencode(q)
-
-
-def kakao_link(label, b):
-    return f"https://map.kakao.com/link/to/{urllib.parse.quote(label)},{b[0]},{b[1]}"
 
 
 def text_for(stop, field):
@@ -317,10 +317,8 @@ st.html(f'<p class="bt-label">Seoul · Blind Trip · from {ui.text(plan.start_na
         f'{ui.text(ss.teaser or f"{n} secret stops are waiting for you. Trust the map.")}</p>'
         f'<p class="bt-caption" style="margin-top:8px">{ui.text(ss.meta.get("weather", ""))}'
         f'{" · route adapted for rain" if ss.meta.get("rain_adapted") else ""}</p></div>')
-m1, m2, m3 = st.columns(3)
-m1.metric("Secret stops", n)
-m2.metric("Trip length", f"{(plan.end_min - plan.start_min) / 60:.1f} h")
-m3.metric("Back by", min_to_hhmm(plan.end_min))
+st.html(ui.stats([("Secret stops", n), ("Trip length", f"{(plan.end_min - plan.start_min) / 60:.1f} h"),
+                  ("Back by", min_to_hhmm(plan.end_min))]))
 if plan.note:
     st.caption(f"ℹ️ {plan.note}")
 if ss.get("replan_msg"):
@@ -375,9 +373,7 @@ else:
             speech_lang = ss.meta["lang"] if stop.poi["id"] in ss.texts else "English"
             st.iframe(ui.speak_button(text_for(stop, "hint"), speech_lang, color in ui.DARK_CARDS),
                       height=44)
-            c1, c2 = st.columns(2)
-            c1.link_button("🧭 Google Maps", gmaps_link(points[i], here), width="stretch")
-            c2.link_button("🗺️ Kakao Map", kakao_link(f"Secret Stop {i + 1}", here), width="stretch")
+            st.link_button("🧭 Navigate with Google Maps", gmaps_link(here), width="stretch")
             if not ss.get("mission") and st.button(
                     "📍 I've arrived — " + ("take the photo mission" if ss.meta.get("missions") else "reveal!"),
                     type="primary", width="stretch"):

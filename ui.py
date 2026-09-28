@@ -69,6 +69,12 @@ CSS = f"""
 .bt-pill.on-dark {{ background: rgba(255,255,255,.18); color: var(--on-dark); }}
 .bt-pill.on-light {{ background: rgba(10,10,10,.08); color: var(--ink); }}
 
+/* ---------- stats row (stays 3-up on phones) ---------- */
+.bt-statrow {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0 0 16px; }}
+.bt-stat {{ background: var(--surface-card); border-radius: var(--r-lg); padding: 16px 20px; }}
+.bt-stat .k {{ font-size: 13px; font-weight: 500; color: var(--muted); }}
+.bt-stat .v {{ font-size: 28px; font-weight: 500; letter-spacing: -1px; color: var(--ink); margin-top: 4px; }}
+
 /* ---------- bands ---------- */
 .bt-band {{ background: var(--surface-soft); border-radius: var(--r-xl); padding: 32px; margin: 0 0 24px; }}
 .bt-footer {{ background: var(--surface-soft); border-radius: var(--r-xl); padding: 48px 32px; margin-top: 96px;
@@ -149,6 +155,11 @@ CSS = f"""
   .bt-display-md {{ font-size: 30px; }}
   .bt-grid {{ grid-template-columns: 1fr; }}
   .bt-hint {{ font-size: 21px; }}
+  [data-testid="stMainBlockContainer"] {{ padding: 72px 12px 32px; }}
+  .bt-band {{ padding: 20px; }}
+  .bt-stat {{ padding: 12px; }}
+  .bt-stat .v {{ font-size: 20px; }}
+  .bt-footer {{ margin-top: 48px; padding: 32px 20px; }}
   .bt-card, .st-key-planner, .st-key-reveal, [class*="st-key-stop-"] {{ padding: 24px; }}
 }}
 </style>
@@ -297,6 +308,12 @@ document.getElementById('say').onclick = () => {{
 </script>
 <style>body{{margin:0;background:transparent}}</style>
 """
+
+
+def stats(items):
+    return '<div class="bt-statrow">' + "".join(
+        f'<div class="bt-stat"><div class="k">{escape(str(k))}</div><div class="v">{escape(str(v))}</div></div>'
+        for k, v in items) + "</div>"
 
 
 def pills(items, tone=""):

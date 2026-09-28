@@ -18,3 +18,6 @@ headingFontWeights = 500
 [theme.sidebar]
 backgroundColor = "#faf5e8"
 secondaryBackgroundColor = "#f5f0e0"
+
+[client]
+toolbarMode = "minimal"
