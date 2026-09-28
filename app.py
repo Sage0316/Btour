@@ -14,6 +14,7 @@ import streamlit as st
 
 import llm
 import ui
+import weather
 from planner import (START_POINTS, THEMES, cuopt_available, haversine_km, load_pois,
                      min_to_hhmm, plan_trip, tag_scores)
 
@@ -117,6 +118,11 @@ def replan(i, delay):
                        f"{len(after - before)} new. Destinations stay secret.")
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_outlook(day, start_min, hours):
+    return weather.outlook(day, start_min, hours)
+
+
 def reset():
     for k in ("plan", "texts", "teaser", "step", "revealed", "meta", "peek", "replan_msg"):
         ss.pop(k, None)
@@ -131,6 +137,7 @@ with st.sidebar:
     backend = st.radio("Route solver", ["auto", "cuopt", "cpu"], horizontal=True,
                        help="auto = cuOpt if installed, otherwise CPU exact DP")
     judge = st.toggle("🔍 Judge mode (shows spoilers)")
+    demo_rain = st.toggle("🌧️ Simulate rain (demo)", help="Pretend rain is forecast to show weather-aware routing.")
     if "plan" in ss and st.button("↺ New trip", width="stretch"):
         reset()
         st.rerun()
@@ -156,6 +163,14 @@ if "plan" not in ss:
         default_t = {"night": dt.time(18, 0), "romantic": dt.time(17, 0)}.get(theme, dt.time(10, 0))
         t0 = c4.time_input("Start time", default_t, step=dt.timedelta(minutes=30))
         hours = c5.slider("Hours", 3, 10, 6)
+        start_min = t0.hour * 60 + t0.minute
+        forecast = cached_outlook(day, start_min, hours)
+        if demo_rain:
+            forecast = {**(forecast or {"tmin": None, "tmax": None, "mm": 0}), "prob": 80, "rainy": True}
+        w1, w2 = st.columns([3, 2], vertical_alignment="center")
+        w1.caption(weather.describe(forecast) + (" (simulated)" if demo_rain else ""))
+        adapt_weather = w2.toggle("🌦️ Adapt route to weather", value=True,
+                                  help="If rain is likely, indoor places get priority.")
         c6, c7 = st.columns(2)
         max_stops = c6.slider("Max secret stops", 3, 7, 5)
         difficulty = c7.segmented_control("Clue difficulty", ["Easy", "Medium", "Hard"],
@@ -187,8 +202,10 @@ if "plan" not in ss:
                 elif custom.strip():
                     st.write("⚠️ Custom moods need NVIDIA_API_KEY — using the selected theme instead.")
 
+                if adapt_weather and forecast and forecast["rainy"] and theme != "rainy":
+                    scores = weather.adapt(scores, pois)
+                    st.write(f"🌧️ {forecast['prob']}% chance of rain: indoor places get priority.")
                 st.write("🧮 Solving orienteering with time windows (opening hours, stay time, budget)…")
-                start_min = t0.hour * 60 + t0.minute
                 plan = plan_trip(pois, scores, start, start_min, hours, day.weekday(), max_stops,
                                  backend, addons=addons, foodie=foodie)
                 if not plan.stops:
@@ -210,7 +227,10 @@ if "plan" not in ss:
                       meta={"mood": mood, "source": source, "lang": lang, "scores": scores,
                             "hours": hours, "weekday": day.weekday(), "max_stops": max_stops,
                             "addons": addons, "foodie": foodie, "backend": backend,
-                            "difficulty": difficulty})
+                            "difficulty": difficulty,
+                            "weather": weather.describe(forecast) + (" (simulated)" if demo_rain else ""),
+                            "rain_adapted": bool(adapt_weather and forecast and forecast["rainy"]
+                                                 and theme != "rainy")})
             st.rerun()
 
     st.html(ui.how_it_works())
@@ -228,7 +248,9 @@ points = [plan.start_point] + [(s.poi["lat"], s.poi["lng"]) for s in plan.stops]
 st.html(f'<p class="bt-label">Seoul · Blind Trip · from {ui.text(plan.start_name)}</p>'
         f'<h1 class="bt-display-md">Your secret route</h1>'
         f'<div class="bt-band" style="margin-top:24px"><p class="bt-title-md">✨ '
-        f'{ui.text(ss.teaser or f"{n} secret stops are waiting for you. Trust the map.")}</p></div>')
+        f'{ui.text(ss.teaser or f"{n} secret stops are waiting for you. Trust the map.")}</p>'
+        f'<p class="bt-caption" style="margin-top:8px">{ui.text(ss.meta.get("weather", ""))}'
+        f'{" · route adapted for rain" if ss.meta.get("rain_adapted") else ""}</p></div>')
 m1, m2, m3 = st.columns(3)
 m1.metric("Secret stops", n)
 m2.metric("Trip length", f"{(plan.end_min - plan.start_min) / 60:.1f} h")
