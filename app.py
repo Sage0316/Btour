@@ -18,6 +18,7 @@ from planner import (START_POINTS, THEMES, cuopt_available, load_pois,
 
 LANGS = ["English", "日本語", "简体中文", "Español", "Français", "한국어"]
 MODE_ICON = {"walk": "🚶", "subway": "🚇"}
+KIND_BADGE = {"restaurant": "🍽️ Meal stop", "cafe": "☕ Café break", "activity": "🎟️ Activity"}
 
 st.set_page_config(page_title="Seoul Blind Trip", page_icon="🙈", layout="centered")
 st.markdown("""
@@ -67,6 +68,13 @@ def route_map(points, labels):
     ))
 
 
+def badge(stop):
+    kind = stop.poi.get("kind")
+    if kind in KIND_BADGE:
+        return KIND_BADGE[kind]
+    return "🍽️ Food stop" if stop.group == "food" else ""
+
+
 def reset():
     for k in ("plan", "texts", "teaser", "step", "revealed", "meta"):
         ss.pop(k, None)
@@ -104,9 +112,18 @@ if "plan" not in ss:
     default_t = dt.time(18, 0) if theme == "night" else dt.time(10, 0)
     t0 = c4.time_input("Start time", default_t, step=dt.timedelta(minutes=30))
     hours = c5.slider("Hours", 3, 10, 6)
-    max_stops = st.slider("Max secret stops", 3, 6, 5)
+    max_stops = st.slider("Max secret stops", 3, 7, 5)
+    st.markdown("**Add to my route** · the optimizer picks the spot that fits your path and timing")
+    a1, a2 = st.columns(2)
+    foodie = theme == "food"
+    want_food = a1.toggle("🍽️ A meal or café stop", value=False, disabled=foodie,
+                          help="Trips over lunch or dinner get a restaurant at meal time; "
+                               "otherwise a café break. (Foodie Trip is all food already.)")
+    want_act = a2.toggle("🎟️ An activity", value=False,
+                         help="City tour bus, river cruise, hanbok rental, cable car, karaoke…")
+    addons = [k for k, on in (("food", want_food and not foodie), ("activity", want_act)) if on]
 
-    if st.button("🎲 Start my blind trip", type="primary", use_container_width=True):
+    if st.button("🎲 Start my blind trip", type="primary", width="stretch"):
         mood = custom.strip() or THEMES[theme][0]
         with st.status("Planning your secret route…", expanded=True) as status:
             scores, source = tag_scores(pois, theme), "theme tags"
@@ -123,7 +140,8 @@ if "plan" not in ss:
 
             st.write("🧮 Solving orienteering with time windows (opening hours, stay time, budget)…")
             start_min = t0.hour * 60 + t0.minute
-            plan = plan_trip(pois, scores, start, start_min, hours, day.weekday(), max_stops, backend)
+            plan = plan_trip(pois, scores, start, start_min, hours, day.weekday(), max_stops,
+                             backend, addons=addons, foodie=foodie)
             if not plan.stops:
                 status.update(label="No route fits", state="error")
                 st.error("Nothing fits this time window. Try a longer trip or a different start time.")
@@ -156,6 +174,8 @@ m1, m2, m3 = st.columns(3)
 m1.metric("Secret stops", n)
 m2.metric("Trip length", f"{(plan.end_min - plan.start_min) / 60:.1f} h")
 m3.metric("Back by", min_to_hhmm(plan.end_min))
+if plan.note:
+    st.caption(f"ℹ️ {plan.note}")
 
 if i >= n:
     st.balloons()
@@ -174,16 +194,16 @@ here = points[i + 1]
 st.progress(i / n, text=f"Stop {i + 1} of {n}")
 
 if not ss.revealed:
-    st.subheader(f"🔒 Secret Stop {i + 1}")
+    st.subheader(f"🔒 Secret Stop {i + 1}" + (f" · {badge(stop)}" if badge(stop) else ""))
     wait = f" · opens {stop.poi['open']}" if stop.wait else ""
     st.markdown(f"{MODE_ICON[stop.mode]} **~{stop.travel_min} min by {stop.mode}** · "
                 f"arrive ≈ {min_to_hhmm(stop.arrive)}{wait} · stay ≈ {stop.poi['stay']} min")
     st.markdown(f'<div class="hint">“{text_for(stop, "hint")}”</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
-    c1.link_button("🧭 Navigate · Google Maps", gmaps_link(points[i], here), use_container_width=True)
+    c1.link_button("🧭 Navigate · Google Maps", gmaps_link(points[i], here), width="stretch")
     c2.link_button("🗺️ Navigate · Kakao Map", kakao_link(f"Secret Stop {i + 1}", here),
-                   use_container_width=True)
-    if st.button("📍 I've arrived — reveal!", type="primary", use_container_width=True):
+                   width="stretch")
+    if st.button("📍 I've arrived — reveal!", type="primary", width="stretch"):
         ss.revealed = True
         st.rerun()
 else:
@@ -193,7 +213,7 @@ else:
     st.write(text_for(stop, "reveal"))
     st.success(f"💡 {text_for(stop, 'tip')}")
     label = "Next secret stop →" if i + 1 < n else "Finish trip 🎉"
-    if st.button(label, type="primary", use_container_width=True):
+    if st.button(label, type="primary", width="stretch"):
         ss.step += 1
         ss.revealed = False
         st.rerun()
@@ -217,13 +237,14 @@ if judge:
     if plan.note:
         st.warning(plan.note)
     st.dataframe(pd.DataFrame([
-        {"stop": k, "place": s.poi["name_en"], "score": s.score, "mode": s.mode,
+        {"stop": k, "place": s.poi["name_en"], "type": badge(s), "score": s.score, "mode": s.mode,
          "travel": s.travel_min, "arrive": min_to_hhmm(s.arrive), "leave": min_to_hhmm(s.depart)}
         for k, s in enumerate(plan.stops, 1)
-    ]), hide_index=True, use_container_width=True)
+    ]), hide_index=True, width="stretch")
     chosen = {s.poi["id"] for s in plan.stops}
-    st.caption("Candidates considered (theme score ≥ 4, open, reachable)")
+    st.caption("Candidates considered (theme score ≥ 4 or requested add-on, open, reachable)")
     st.dataframe(pd.DataFrame([
-        {"place": p["name_en"], "score": sc, "picked": "✅" if p["id"] in chosen else ""}
-        for p, sc in plan.candidates
-    ]), hide_index=True, use_container_width=True)
+        {"place": c.poi["name_en"], "group": c.group or "", "score": c.score,
+         "picked": "✅" if c.poi["id"] in chosen else ""}
+        for c in plan.candidates
+    ]), hide_index=True, width="stretch")

@@ -25,6 +25,7 @@ GENERIC = {
     "palace", "village", "park", "market", "street", "tower", "temple", "lake",
     "square", "museum", "hanok", "seoul", "korea", "garden", "stream", "station",
     "the", "and", "of", "line", "forest", "bridge", "library", "design", "plaza",
+    "city", "tour", "loop", "course", "near", "rental", "ride", "river", "night", "coin",
 }
 
 last_model_used = None
@@ -86,6 +87,9 @@ def leaks(text, poi):
     """True if the text gives away the place's name."""
     low = text.lower()
     if poi["name_ko"].split()[0] in text:
+        return True
+    full = re.sub(r"\s*\(.*?\)", "", poi["name_en"]).lower()
+    if full in low:  # names made only of common words, e.g. "Seoul City Tour Bus"
         return True
     words = re.findall(r"[a-z0-9\-]{4,}", poi["name_en"].lower())
     return any(w in low for w in words if w not in GENERIC)

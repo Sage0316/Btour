@@ -8,17 +8,19 @@ from planner import THEMES, load_pois, min_to_hhmm, plan_trip, tag_scores
 
 pois = load_pois()
 cases = [
-    ("calm", "Myeongdong", 10 * 60, 6),
-    ("landmark", "Hongdae (Hongik Univ. Stn)", 10 * 60, 7),
-    ("night", "Gangnam Station", 18 * 60, 4),
-    ("kculture", "Seoul Station", 11 * 60, 6),
+    ("calm", "Myeongdong", 10 * 60, 6, ()),
+    ("calm", "Myeongdong", 10 * 60, 6, ("food", "activity")),
+    ("landmark", "Hongdae (Hongik Univ. Stn)", 10 * 60, 7, ("food",)),
+    ("night", "Gangnam Station", 18 * 60, 4, ("activity",)),
+    ("food", "Seoul Station", 11 * 60, 6, ()),
 ]
 
-for theme, start, t0, hours in cases:
+for theme, start, t0, hours, addons in cases:
     scores = tag_scores(pois, theme)
-    print(f"\n=== {THEMES[theme][0]} from {start}, {hours}h ===")
+    print(f"\n=== {THEMES[theme][0]} from {start}, {hours}h, add-ons={addons} ===")
     for backend in ("cpu", "cuopt"):
-        p = plan_trip(pois, scores, start, t0, hours, weekday=2, max_stops=5, backend=backend)
+        p = plan_trip(pois, scores, start, t0, hours, weekday=2, max_stops=5, backend=backend,
+                      addons=addons, foodie=(theme == "food"))
         total = sum(s.score for s in p.stops)
         moving = sum(s.travel_min + s.wait for s in p.stops)
         print(f"[{p.backend}] {p.solve_ms:.0f} ms, {len(p.candidates)} candidates, "
@@ -26,4 +28,4 @@ for theme, start, t0, hours in cases:
         if p.note:
             print("   note:", p.note)
         for s in p.stops:
-            print(f"   {min_to_hhmm(s.arrive)} {s.poi['name_en']} [{s.score}]")
+            print(f"   {min_to_hhmm(s.arrive)} {s.poi['name_en']} [{s.score}] {s.group or ''}")

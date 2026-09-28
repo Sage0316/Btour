@@ -4,8 +4,12 @@ The planning problem is a prize-collecting TSP with time windows (orienteering):
 pick the subset of places that maximizes theme score within the time budget,
 respecting opening hours and stay durations, and order them.
 
+Optional add-ons ("include a food stop", "include an activity") become group
+constraints: exactly one member of the group must be on the route.
+
 Backends:
-  - cuOpt (GPU): routing.DataModel with order prizes + time windows.
+  - cuOpt (GPU): routing.DataModel with order prizes, time windows and one
+    capacity dimension per group.
   - CPU exact DP: bitmask dynamic programming over the top-K candidates.
 """
 
@@ -30,17 +34,25 @@ START_POINTS = {
 
 # theme key -> (label, tag weights)
 THEMES = {
-    "calm": ("🌿 Calm & Slow", {"calm": 4, "nature": 3, "traditional": 1}),
+    "calm": ("🌿 Healing & Slow", {"calm": 4, "nature": 3, "traditional": 1}),
     "landmark": ("🏙️ Iconic Landmarks", {"landmark": 5, "night": 1}),
+    "food": ("🍜 Foodie Trip", {"food": 5, "traditional": 1}),
     "traditional": ("🏯 Traditional Korea", {"traditional": 5, "calm": 1}),
     "kculture": ("🎤 K-Culture & Trendy", {"kculture": 4, "trendy": 3}),
-    "food": ("🍜 Foodie Adventure", {"food": 5, "traditional": 1}),
     "night": ("🌃 Night Views", {"night": 5, "landmark": 1}),
 }
+
+# Kinds that only show up on request (or, for restaurants/cafés, on the Foodie theme).
+ADDON_ONLY = {"restaurant", "cafe", "activity"}
+ADDON_PRIZE = 6       # floor score for a requested add-on stop
+FOODIE_CAPS = {"restaurant": 2, "cafe": 1}  # keep a food trip from being five lunches
+LUNCH = (11 * 60 + 30, 14 * 60)
+DINNER = (17 * 60 + 30, 20 * 60 + 30)
 
 MIN_SCORE = 4        # places scoring below this (0-10) are never candidates
 PRIZE_WEIGHT = 10    # 1 theme point is worth 10 minutes of travel
 MAX_CANDIDATES = 12  # CPU DP is exact over 2^K subsets; cuOpt gets every candidate
+ADDON_SLOTS = 3      # per requested add-on group, within MAX_CANDIDATES
 NEAR_START_KM = 0.4  # skip places you are already standing in
 
 
@@ -83,6 +95,24 @@ def tag_scores(pois, theme_key):
     return {k: round(10 * v / top) for k, v in raw.items()}
 
 
+def meal_window(start_min, budget):
+    """Lunch or dinner window the trip overlaps by at least an hour, else None."""
+    end = start_min + budget
+    for lo, hi in (LUNCH, DINNER):
+        if min(end, hi) - max(start_min, lo) >= 60:
+            return lo, hi
+    return None
+
+
+@dataclass
+class Cand:
+    poi: dict
+    score: int
+    early: int    # minutes after trip start
+    late: int
+    group: str = None
+
+
 @dataclass
 class Stop:
     poi: dict
@@ -92,6 +122,7 @@ class Stop:
     arrive: int   # minutes of day
     depart: int
     wait: int
+    group: str = None
 
 
 @dataclass
@@ -103,25 +134,65 @@ class Plan:
     end_min: int
     backend: str
     solve_ms: float
-    candidates: list = field(default_factory=list)  # (poi, score) considered
+    candidates: list = field(default_factory=list)  # Cand considered
     note: str = ""
 
 
-def _candidates(pois, scores, start_pt, start_min, budget, weekday):
+def _candidates(pois, scores, start_pt, start_min, budget, weekday, addons, foodie):
+    meal = meal_window(start_min, budget)
     out = []
     for p in pois:
+        kind = p.get("kind", "place")
         s = scores.get(p["id"], 0)
-        if s < MIN_SCORE or weekday in p.get("closed_days", []):
+        early = max(0, hhmm_to_min(p["open"]) - start_min)
+        late = min(budget - p["stay"], hhmm_to_min(p["close"]) - p["stay"] - start_min)
+        group = None
+
+        if foodie and kind in FOODIE_CAPS:
+            group = kind                    # regular foodie stop, capped per kind
+        elif kind in ADDON_ONLY or (kind == "market" and "food" in addons):
+            if kind == "activity" and "activity" in addons:
+                group = "activity"
+            elif kind != "activity" and "food" in addons and not foodie:
+                # Meal-time trips get a restaurant or market at lunch/dinner;
+                # otherwise a café break.
+                if meal and kind in ("restaurant", "market"):
+                    early = max(early, meal[0] - start_min)
+                    late = min(late, meal[1] - start_min)
+                    group = "food"
+                elif not meal and kind == "cafe":
+                    group = "food"
+            if group is None and kind in ADDON_ONLY:
+                continue
+            if group:
+                s = max(s, ADDON_PRIZE)
+
+        if group is None and s < MIN_SCORE:
+            continue
+        if weekday in p.get("closed_days", []):
             continue
         if haversine_km(start_pt, (p["lat"], p["lng"])) < NEAR_START_KM:
             continue
-        early = max(0, hhmm_to_min(p["open"]) - start_min)
-        late = min(budget - p["stay"], hhmm_to_min(p["close"]) - p["stay"] - start_min)
         if late < early:
             continue
-        out.append((p, s, early, late))
-    out.sort(key=lambda c: -c[1])
+        out.append(Cand(p, s, early, late, group))
+    out.sort(key=lambda c: -c.score)
     return out
+
+
+def _cpu_subset(cands, required):
+    """Top theme places plus the best few members of each required group."""
+    regular = [c for c in cands if c.group not in required]
+    keep = regular[:MAX_CANDIDATES - ADDON_SLOTS * len(required)]
+    if keep:
+        clat = sum(c.poi["lat"] for c in keep) / len(keep)
+        clng = sum(c.poi["lng"] for c in keep) / len(keep)
+    for g in required:
+        members = [c for c in cands if c.group == g]
+        if keep:  # prefer add-ons close to where the rest of the trip happens
+            members.sort(key=lambda c: (-c.score, haversine_km((clat, clng), (c.poi["lat"], c.poi["lng"]))))
+        keep += members[:ADDON_SLOTS]
+    return keep
 
 
 def _matrix(points):
@@ -134,9 +205,19 @@ def _matrix(points):
     return T
 
 
-def solve_dp(T, stay, early, late, prize, max_stops):
-    """Exact orienteering with time windows. Index 0 is the start point."""
+def solve_dp(T, stay, early, late, prize, max_stops, group=None, caps=None, required=()):
+    """Exact orienteering with time windows and group caps. Index 0 is the start point.
+
+    Returns (order, missing_groups).
+    """
     n = len(stay)  # number of candidate places (matrix has n + 1 rows)
+    group = group or [None] * n
+    caps = caps or {}
+    gmask = {}
+    for i, g in enumerate(group):
+        if g:
+            gmask[g] = gmask.get(g, 0) | (1 << i)
+
     INF = float("inf")
     best = {}  # (mask, last) -> (finish_time, parent_last)
     for i in range(n):
@@ -154,6 +235,9 @@ def solve_dp(T, stay, early, late, prize, max_stops):
             for nxt in range(n):
                 if mask & (1 << nxt):
                     continue
+                g = group[nxt]
+                if g and bin(mask & gmask[g]).count("1") >= caps.get(g, n):
+                    continue
                 arr = max(t + T[last + 1][nxt + 1], early[nxt])
                 if arr > late[nxt]:
                     continue
@@ -162,28 +246,34 @@ def solve_dp(T, stay, early, late, prize, max_stops):
                 if fin < best.get(key, (INF,))[0]:
                     best[key] = (fin, last)
     if not best:
-        return []
+        return [], list(required)
+
     def value(kv):
         (mask, _), (finish, _) = kv
         members = [i for i in range(n) if mask >> i & 1]
         moving = finish - sum(stay[i] for i in members)  # travel + waiting
         return PRIZE_WEIGHT * sum(prize[i] for i in members) - moving
 
-    (mask, last), _ = max(best.items(), key=value)
+    ok = [kv for kv in best.items() if all(kv[0][0] & gmask.get(g, 0) for g in required)]
+    missing = [] if ok else list(required)
+    (mask, last), _ = max(ok or best.items(), key=value)
     order = []
     while last != -1:
         order.append(last)
         prev = best[(mask, last)][1]
         mask &= ~(1 << last)
         last = prev
-    return order[::-1]
+    return order[::-1], missing
 
 
-def solve_cuopt(T, stay, early, late, prize, max_stops, budget):
+def solve_cuopt(T, stay, early, late, prize, max_stops, budget, group, caps, required):
     import cudf
     from cuopt import routing
 
     n = len(stay)
+    # A large prize makes required add-ons effectively mandatory; the group
+    # capacity below keeps it to exactly the allowed count.
+    prize = [p + (100 if group[i] in required else 0) for i, p in enumerate(prize)]
     M = cudf.DataFrame(T, dtype="float32")
     dm = routing.DataModel(n_locations=n + 1, n_fleet=1, n_orders=n)
     dm.add_cost_matrix(M)
@@ -194,6 +284,9 @@ def solve_cuopt(T, stay, early, late, prize, max_stops, budget):
     dm.set_order_prizes(cudf.Series(prize, dtype="float32"))
     dm.add_capacity_dimension("stops", cudf.Series([1] * n, dtype="int32"),
                               cudf.Series([max_stops], dtype="int32"))
+    for g, cap in caps.items():
+        dm.add_capacity_dimension(g, cudf.Series([int(x == g) for x in group], dtype="int32"),
+                                  cudf.Series([cap], dtype="int32"))
     dm.set_vehicle_locations(cudf.Series([0], dtype="int32"), cudf.Series([0], dtype="int32"))
     dm.set_drop_return_trips(cudf.Series([True]))
     dm.set_vehicle_time_windows(cudf.Series([0], dtype="int32"), cudf.Series([budget], dtype="int32"))
@@ -208,7 +301,9 @@ def solve_cuopt(T, stay, early, late, prize, max_stops, budget):
     if sol.get_status() != 0:
         raise RuntimeError(f"cuOpt status {sol.get_status()}: {sol.get_error_message()}")
     route = sol.get_route().to_pandas().sort_values("arrival_stamp")
-    return [int(loc) - 1 for loc in route["location"] if int(loc) != 0]
+    order = [int(loc) - 1 for loc in route["location"] if int(loc) != 0]
+    missing = [g for g in required if not any(group[i] == g for i in order)]
+    return order, missing
 
 
 def cuopt_available():
@@ -219,52 +314,65 @@ def cuopt_available():
         return False
 
 
-def plan_trip(pois, scores, start_name, start_min, hours, weekday, max_stops, backend="auto"):
+ADDON_LABELS = {"food": "a food stop", "activity": "an activity"}
+
+
+def plan_trip(pois, scores, start_name, start_min, hours, weekday, max_stops,
+              backend="auto", addons=(), foodie=False):
     start_pt = START_POINTS[start_name]
     budget = int(hours * 60)
-    all_cands = _candidates(pois, scores, start_pt, start_min, budget, weekday)
+    addons = set(addons)
+    all_cands = _candidates(pois, scores, start_pt, start_min, budget, weekday, addons, foodie)
+    required = {g for g in addons if any(c.group == g for c in all_cands)}
+    caps = {g: 1 for g in required}
+    if foodie:
+        caps.update({g: c for g, c in FOODIE_CAPS.items() if any(x.group == g for x in all_cands)})
 
     def problem(cands):
-        T = _matrix([start_pt] + [(c[0]["lat"], c[0]["lng"]) for c in cands])
-        return (T, [c[0]["stay"] for c in cands], [c[2] for c in cands],
-                [c[3] for c in cands], [c[1] for c in cands])
+        T = _matrix([start_pt] + [(c.poi["lat"], c.poi["lng"]) for c in cands])
+        return (T, [c.poi["stay"] for c in cands], [c.early for c in cands],
+                [c.late for c in cands], [c.score for c in cands])
 
-    note = ""
+    notes = []
     t0 = time.perf_counter()
     order = None
     if backend in ("auto", "cuopt") and all_cands:
         if cuopt_available():
             try:
                 cands = all_cands
-                order = solve_cuopt(*problem(cands), max_stops, budget)
+                order, missing = solve_cuopt(*problem(cands), max_stops, budget,
+                                             [c.group for c in cands], caps, required)
                 used = "NVIDIA cuOpt (GPU)"
             except Exception as e:  # keep the demo alive
-                note = f"cuOpt failed, fell back to CPU: {e}"
+                notes.append(f"cuOpt failed, fell back to CPU: {e}")
         elif backend == "cuopt":
-            note = "cuOpt not installed on this machine; used CPU exact DP."
+            notes.append("cuOpt not installed on this machine; used CPU exact DP.")
     if order is None:
-        cands = all_cands[:MAX_CANDIDATES]
-        order = solve_dp(*problem(cands), max_stops) if cands else []
+        cands = _cpu_subset(all_cands, required)
+        order, missing = (solve_dp(*problem(cands), max_stops, [c.group for c in cands],
+                                   caps, required) if cands else ([], []))
         used = "CPU exact DP"
     solve_ms = (time.perf_counter() - t0) * 1000
+
+    for g in sorted(addons - required) + sorted(missing):
+        notes.append(f"Couldn't fit {ADDON_LABELS[g]} into this time window.")
 
     stops = []
     t = start_min
     prev = start_pt
     for i in order:
-        p, s = cands[i][0], cands[i][1]
-        here = (p["lat"], p["lng"])
+        c = cands[i]
+        here = (c.poi["lat"], c.poi["lng"])
         mins, mode = leg(prev, here)
         arr = t + mins
-        open_at = hhmm_to_min(p["open"])
-        wait = max(0, open_at - arr)
+        wait = max(0, start_min + c.early - arr)
         arr += wait
-        dep = arr + p["stay"]
-        stops.append(Stop(p, s, mins, mode, arr, dep, wait))
+        dep = arr + c.poi["stay"]
+        stops.append(Stop(c.poi, c.score, mins, mode, arr, dep, wait, c.group))
         t, prev = dep, here
 
     return Plan(
         stops=stops, start_name=start_name, start_point=start_pt,
         start_min=start_min, end_min=t, backend=used, solve_ms=solve_ms,
-        candidates=[(c[0], c[1]) for c in cands], note=note,
+        candidates=cands, note=" ".join(notes),
     )
