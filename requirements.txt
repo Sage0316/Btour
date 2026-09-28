@@ -1,0 +1,3 @@
+streamlit>=1.40
+requests
+# GPU only (optional): pip install --extra-index-url=https://pypi.nvidia.com "cuopt-cu12==26.2.*"
