@@ -210,9 +210,11 @@ def _matrix(points):
     return T
 
 
-def solve_dp(T, stay, early, late, prize, max_stops, group=None, caps=None, required=()):
+def solve_dp(T, stay, early, late, prize, max_stops, group=None, caps=None, required=(), end=None):
     """Exact orienteering with time windows and group caps. Index 0 is the start point.
 
+    `end=(column, latest_arrival)` forces the route to finish at a fixed place
+    (the matrix column) by a deadline, counting that last leg as travel.
     Returns (order, missing_groups).
     """
     n = len(stay)  # number of candidate places (matrix has n + 1 rows)
@@ -250,18 +252,24 @@ def solve_dp(T, stay, early, late, prize, max_stops, group=None, caps=None, requ
                 fin = arr + stay[nxt]
                 if fin < best.get(key, (INF,))[0]:
                     best[key] = (fin, last)
-    if not best:
+    states = list(best.items())
+    if end:
+        col, end_late = end
+        states = [kv for kv in states if kv[1][0] + T[kv[0][1] + 1][col] <= end_late]
+    if not states:
         return [], list(required)
 
     def value(kv):
-        (mask, _), (finish, _) = kv
+        (mask, last), (finish, _) = kv
         members = [i for i in range(n) if mask >> i & 1]
         moving = finish - sum(stay[i] for i in members)  # travel + waiting
+        if end:
+            moving += T[last + 1][end[0]]
         return PRIZE_WEIGHT * sum(prize[i] for i in members) - moving
 
-    ok = [kv for kv in best.items() if all(kv[0][0] & gmask.get(g, 0) for g in required)]
+    ok = [kv for kv in states if all(kv[0][0] & gmask.get(g, 0) for g in required)]
     missing = [] if ok else list(required)
-    (mask, last), _ = max(ok or best.items(), key=value)
+    (mask, last), _ = max(ok or states, key=value)
     order = []
     while last != -1:
         order.append(last)
@@ -385,3 +393,121 @@ def plan_trip(pois, scores, start_name, start_min, hours, weekday, max_stops,
         start_min=start_min, end_min=t, backend=used, solve_ms=solve_ms,
         candidates=cands, note=" ".join(notes),
     )
+
+
+# ---------- two-team race ----------
+
+@dataclass
+class RacePlan:
+    teams: dict          # "A" / "B" -> Plan (last stop is the shared meeting point)
+    meet: dict           # meeting-point poi
+    backend: str
+    solve_ms: float
+    note: str = ""
+
+
+def _schedule(cands, start_pt, start_min, groups=None):
+    stops, t, prev = [], start_min, start_pt
+    for k, c in enumerate(cands):
+        here = (c.poi["lat"], c.poi["lng"])
+        mins, mode = leg(prev, here)
+        arr = t + mins
+        wait = max(0, start_min + c.early - arr)
+        arr += wait
+        dep = arr + c.poi["stay"]
+        stops.append(Stop(c.poi, c.score, mins, mode, arr, dep, wait,
+                          (groups or {}).get(k, c.group)))
+        t, prev = dep, here
+    return stops, t
+
+
+def solve_cuopt_race(T, stay, early, late, prize, per_team, meet_col, meet_late):
+    import cudf
+    from cuopt import routing
+
+    n = len(stay)
+    M = cudf.DataFrame(T, dtype="float32")
+    dm = routing.DataModel(n_locations=n + 2, n_fleet=2, n_orders=n)
+    dm.add_cost_matrix(M)
+    dm.add_transit_time_matrix(M)
+    dm.set_order_locations(cudf.Series(list(range(1, n + 1)), dtype="int32"))
+    dm.set_order_time_windows(cudf.Series(early, dtype="int32"), cudf.Series(late, dtype="int32"))
+    dm.set_order_service_times(cudf.Series(stay, dtype="int32"))
+    dm.set_order_prizes(cudf.Series(prize, dtype="float32"))
+    dm.add_capacity_dimension("stops", cudf.Series([1] * n, dtype="int32"),
+                              cudf.Series([per_team, per_team], dtype="int32"))
+    # Both teams leave the hotel and must end at the meeting point by its deadline.
+    dm.set_vehicle_locations(cudf.Series([0, 0], dtype="int32"),
+                             cudf.Series([meet_col, meet_col], dtype="int32"))
+    dm.set_vehicle_time_windows(cudf.Series([0, 0], dtype="int32"),
+                                cudf.Series([meet_late, meet_late], dtype="int32"))
+    dm.set_min_vehicles(2)
+    dm.set_objective_function(
+        cudf.Series([routing.Objective.PRIZE, routing.Objective.COST]),
+        cudf.Series([PRIZE_WEIGHT, 1], dtype="float32"),
+    )
+    ss = routing.SolverSettings()
+    ss.set_time_limit(3)
+    sol = routing.Solve(dm, ss)
+    if sol.get_status() != 0:
+        raise RuntimeError(f"cuOpt status {sol.get_status()}: {sol.get_error_message()}")
+    route = sol.get_route().to_pandas().sort_values("arrival_stamp")
+    out = []
+    for truck in sorted(route["truck_id"].unique()):
+        locs = route[route["truck_id"] == truck]["location"]
+        out.append([int(loc) - 1 for loc in locs if 0 < int(loc) < meet_col])
+    return out + [[]] * (2 - len(out))
+
+
+def plan_race(pois, scores, start_name, start_min, hours, weekday, per_team, backend="auto", foodie=False):
+    """Two disjoint secret routes from the same start that converge on one meeting point."""
+    start_pt = START_POINTS[start_name]
+    budget = int(hours * 60)
+    cands = _candidates(pois, scores, start_pt, start_min, budget, weekday, set(), foodie)
+    finale = [c for c in cands if c.late >= budget * 0.6
+              and haversine_km(start_pt, (c.poi["lat"], c.poi["lng"])) <= 10]
+    if not finale:
+        return None
+    meet = max(finale, key=lambda c: (c.score, c.late))
+    pool = [c for c in cands if c.poi["id"] != meet.poi["id"]]
+    meet_pt = (meet.poi["lat"], meet.poi["lng"])
+
+    def problem(sub):
+        T = _matrix([start_pt] + [(c.poi["lat"], c.poi["lng"]) for c in sub] + [meet_pt])
+        return (T, [c.poi["stay"] for c in sub], [c.early for c in sub],
+                [c.late for c in sub], [c.score for c in sub])
+
+    note, orders, used = "", None, "CPU exact DP"
+    t0 = time.perf_counter()
+    if backend in ("auto", "cuopt") and cuopt_available() and pool:
+        try:
+            idx = solve_cuopt_race(*problem(pool), per_team, len(pool) + 1, meet.late)
+            orders = [[pool[k] for k in r] for r in idx]
+            used = "NVIDIA cuOpt (GPU, 2-vehicle VRP)"
+        except Exception as e:
+            note = f"cuOpt failed, fell back to CPU: {e}"
+    elif backend == "cuopt":
+        note = "cuOpt not installed on this machine; used CPU exact DP."
+    if orders is None:
+        def best_route(exclude, k):
+            sub = [c for c in pool if c.poi["id"] not in exclude][:MAX_CANDIDATES]
+            if not sub or k < 1:
+                return []
+            order, _ = solve_dp(*problem(sub), k, end=(len(sub) + 1, meet.late))
+            return [sub[j] for j in order]
+
+        ids = lambda route: {c.poi["id"] for c in route}
+        team_a = best_route(set(), per_team)             # A drafts first,
+        team_b = best_route(ids(team_a), per_team)       # B from what's left,
+        if len(team_a) > len(team_b):                    # then A re-drafts to match B's size
+            team_a = best_route(ids(team_b), len(team_b)) or team_a
+        orders = [team_a, team_b]
+    solve_ms = (time.perf_counter() - t0) * 1000
+
+    teams = {}
+    for name, route in zip("AB", orders):
+        stops, end = _schedule(route + [meet], start_pt, start_min, {len(route): "meet"})
+        teams[name] = Plan(stops=stops, start_name=start_name, start_point=start_pt,
+                           start_min=start_min, end_min=end, backend=used, solve_ms=solve_ms,
+                           candidates=cands, note=note)
+    return RacePlan(teams=teams, meet=meet.poi, backend=used, solve_ms=solve_ms, note=note)
