@@ -71,6 +71,8 @@ python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
      식당/액티비티 옵션은 그룹별 capacity dimension(최대 1곳) + 큰 prize(사실상 필수).
    - 레이스 모드: **차량 2대 VRP** — 두 차량이 같은 출발점에서 나가 같은 만남 장소로 복귀(`set_vehicle_locations`, `set_min_vehicles(2)`).
    - 재계획: 현재 위치·시각에서 남은 시간으로 다시 풂.
+   - **GPU 검증 완료**: Linux + NVIDIA GPU에서 `cuopt_check.py`의 6개 케이스(1인 여행 5개 + 두 팀 레이스)를 모두 cuOpt가 해결.
+     레이스는 약 3초(솔버 시간 제한) 만에 두 팀 경로를 동시에 산출했고, CPU 정확해와 같은 경로임을 확인.
    - GPU가 없으면 CPU 비트마스크 DP로 자동 대체(정확하지만 후보 12곳까지 현실적, 레이스는 팀 A→B 순차 드래프트로 근사).
    - 구현 시 NVIDIA Agent Skills(`cuopt-routing-api-python`, `cuopt-install`)를 참고했다.
 
