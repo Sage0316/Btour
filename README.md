@@ -1,15 +1,60 @@
 # 📦 Unboxing Seoul (언박싱 서울)
 
-## A blind-trip planner for international visitors to Seoul: choose a mood, not a destination.
+## Choose a mood, not a destination.
 
-외국인 여행자가 **무드(테마)만 고르면**, AI가 목적지를 숨긴 채 서울 동선을 짜 주는 **블라인드 여행 웹앱**.
-여행자는 힌트와 구글맵만 따라가고, 장소는 도착하는 순간 상자를 열 듯 공개된다.
+A blind-trip planner for international visitors to Seoul. Travelers choose a mood, follow clues to secret stops, and discover each destination only when they arrive.
 
 **NVIDIA 해커톤 · 팀 투니버스** — 윤지혜(팀장), 이정후
 
-## **Why this matters**
+## Why this matters
 
 Seoul offers endless places to explore, but international visitors often face choice overload and information fatigue. Unboxing Seoul hands those decisions to AI, leaving travelers with the excitement of discovery.
+
+## Built with NVIDIA
+
+- **Nemotron** scores custom moods and writes multilingual, spoiler-free clues.
+- **Nemotron vision** checks photo missions before each reveal.
+- **cuOpt** plans time-aware routes, replans when travelers run late, and solves the two-team race as a 2-vehicle VRP. Six GPU test cases passed, including the race.
+
+## How it works
+
+1. Choose a mood, trip time, and starting area.
+2. Follow a clue and directions toward one secret stop at a time.
+3. Arrive, complete an optional photo mission, and unbox the destination.
+4. Continue the route or replan if running late; finish with a stamped travel passport.
+
+## 기능
+
+### 테마
+
+12개 프리셋 또는 자유 문장 무드: Healing · Landmarks · Foodie · Traditional · K-Culture · Night Views · Date & Romance · Photo Spots · Shopping · Rainy Day · Family & Kids · K-Drama Spots
+
+### 경로 옵션 (Add to my route)
+
+- 식당·카페 1곳: 점심(11:30–14:00)/저녁(17:30–20:30)에 1시간 이상 걸치면 그 시간대 식당·시장, 아니면 카페. Foodie 테마에선 숨김(식당 최대 2 + 카페 1).
+- 액티비티 1곳: 시티투어버스(주간/야경), 한강 유람선, 한복 대여, 남산 케이블카, 롯데월드, 한강 자전거, 코인노래방.
+
+두 옵션 모두 경로 안에 Secret Stop으로 끼워 넣는다.
+
+### 스톱 카드
+
+- **What's waiting for you** — 도착하면 눈에 보이는 것 2가지를 쉬운 말로(장소명·동네명·"가장 오래된" 같은 표현 금지). Hard 난이도만 시적인 수수께끼.
+- **How to get there** — ① 구글맵은 근처 역(또는 200 m 앞 지점)까지만 → ② "I'm in the area"를 누르면 도보 안내(23곳은 직접 쓴 안내, 나머지는 방향·거리) → ③ 못 찾으면 정확한 위치를 구글맵으로. 800 m 이내 구간은 바로 도보 안내.
+- 구글맵에는 항상 **현재 스톱 하나만** 넘긴다. 다음 스톱은 지금 스톱을 공개해야 생긴다.
+
+### 게임 요소
+
+- 힌트 난이도: Easy(장소 종류·거리 추가 힌트) / Medium / Hard(스톱 종류 배지 숨김).
+- 사진 미션: 도착 후 "전통적인 무언가를 찍어보세요"처럼 **장소를 스포일러하지 않는** 미션을 통과해야 공개. 비전 모델이 판정.
+- 두 팀 레이스: 같은 숙소에서 출발해 겹치지 않는 비밀 경로로 이동, **같은 비밀 만남 장소**에서 합류. 먼저 도착한 팀 기록.
+- 여행 여권: 완주하면 스톱마다 도장이 찍힌 여권 카드.
+
+### 여행 중
+
+- Running late?: 늦은 만큼 남은 스톱을 현재 위치에서 다시 최적화(목적지는 계속 비밀).
+- Lost? Peek: 확인 후 현재 목적지만 미리 보기.
+- 자동 저장: 버튼을 누를 때마다 로컬 `.trips/`에 저장, 주소의 `?trip=<id>`로 새로고침·앱 전환 후에도 이어짐, 첫 화면 "Continue your last trip".
+- 힌트 음성 읽기(선택한 언어), 날씨 반영(비 예보 시 실내 우선, 사이드바에서 비 시뮬레이션), 공개 카드에 K-드라마 촬영작 표시.
 
 ## 실행
 
@@ -24,33 +69,6 @@ python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
 - 키가 없으면 테마 태그 점수 + 직접 작성한 영어 힌트로 동작하고, 키가 있으면 Nemotron이 켜진다.
 - 같은 와이파이의 폰에서는 `http://<노트북 IP>:8501`로 접속한다(실행 시 터미널의 Network URL).
 - 코드를 고친 뒤에는 Streamlit을 재시작해야 반영된다.
-
-## 기능
-
-**테마 (12개 + 자유 문장 무드)**
-🌿 Healing · 🏙️ Landmarks · 🍜 Foodie · 🏯 Traditional · 🎤 K-Culture · 🌃 Night Views ·
-💑 Date & Romance · 📸 Photo Spots · 🛍️ Shopping · 🌧️ Rainy Day · 👨‍👩‍👧 Family & Kids · 🎬 K-Drama Spots
-
-**경로 옵션 (Add to my route)** — 경로 안에 Secret Stop으로 끼워 넣음
-- 🍽️ 식당·카페 1곳: 점심(11:30–14:00)/저녁(17:30–20:30)에 1시간 이상 걸치면 그 시간대 식당·시장, 아니면 카페. Foodie 테마에선 숨김(식당 최대 2 + 카페 1).
-- 🎟️ 액티비티 1곳: 시티투어버스(주간/야경), 한강 유람선, 한복 대여, 남산 케이블카, 롯데월드, 한강 자전거, 코인노래방
-
-**스톱 카드 한 장의 구성**
-- 🔒 **What's waiting for you** — 도착하면 눈에 보이는 것 2가지를 쉬운 말로(장소명·동네명·"가장 오래된" 같은 표현 금지). Hard 난이도만 시적인 수수께끼.
-- 🧭 **How to get there** — ① 구글맵은 근처 역(또는 200 m 앞 지점)까지만 → ② "I'm in the area"를 누르면 🚶 도보 안내(23곳은 직접 쓴 안내, 나머지는 방향·거리) → ③ 못 찾으면 정확한 위치를 구글맵으로. 800 m 이내 구간은 바로 도보 안내.
-- 구글맵에는 항상 **현재 스톱 하나만** 넘긴다. 다음 스톱은 지금 스톱을 공개해야 생긴다.
-
-**게임 요소**
-- 🧩 힌트 난이도: Easy(장소 종류·거리 추가 힌트) / Medium / Hard(스톱 종류 배지 숨김)
-- 📷 사진 미션: 도착 후 "전통적인 무언가를 찍어보세요"처럼 **장소를 스포일러하지 않는** 미션을 통과해야 공개. 비전 모델이 판정.
-- 🏁 두 팀 레이스: 같은 숙소에서 출발해 겹치지 않는 비밀 경로로 이동, **같은 비밀 만남 장소**에서 합류. 먼저 도착한 팀 기록.
-- 🛂 여행 여권: 완주하면 스톱마다 도장이 찍힌 여권 카드
-
-**여행 중**
-- ⏰ Running late?: 늦은 만큼 남은 스톱을 현재 위치에서 다시 최적화(목적지는 계속 비밀)
-- 🆘 Lost? Peek: 확인 후 현재 목적지만 미리 보기
-- 💾 자동 저장: 버튼을 누를 때마다 로컬 `.trips/`에 저장, 주소의 `?trip=<id>`로 새로고침·앱 전환 후에도 이어짐, 첫 화면 "Continue your last trip"
-- 🔊 힌트 음성 읽기(선택한 언어), 🌦️ 날씨 반영(비 예보 시 실내 우선, 사이드바에서 비 시뮬레이션), 🎬 공개 카드에 K-드라마 촬영작 표시
 
 ## 구조
 
