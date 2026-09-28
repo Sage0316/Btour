@@ -12,37 +12,54 @@ export NVIDIA_API_KEY=nvapi-...        # build.nvidia.com 에서 발급 (없어�
 ```
 
 키가 없으면 테마 태그 점수 + 직접 작성한 영어 힌트로 동작하고, 키가 있으면 Nemotron이 켜진다.
+`ui.py`·`planner.py` 등을 고친 뒤에는 Streamlit을 재시작해야 반영된다.
 
-## 테마 & 경로 옵션
+## 기능
 
-- **테마**: 🌿 Healing · 🏙️ Landmarks · 🍜 Foodie · 🏯 Traditional · 🎤 K-Culture · 🌃 Night Views (+ 자유 문장 무드)
-- **Add to my route** (경로 안에 Secret Stop으로 끼워 넣음, 옵티마이저가 위치·시간에 맞는 곳을 고름)
-  - 🍽️ 식당·카페 1곳: 여행이 점심(11:30–14:00)/저녁(17:30–20:30)에 1시간 이상 걸치면 그 시간대에 식당·시장, 아니면 카페. Foodie 테마에선 숨김 (식당 최대 2 + 카페 1).
-  - 🎟️ 액티비티 1곳: 시티투어버스(주간/야경), 한강 유람선, 한복 대여, 남산 케이블카, 롯데월드, 한강 자전거, 코인노래방
-- 식당·카페·액티비티는 옵션을 켰을 때만 경로에 들어간다(Foodie 테마의 식당·카페 제외).
+**테마 (12개 + 자유 문장 무드)**
+🌿 Healing · 🏙️ Landmarks · 🍜 Foodie · 🏯 Traditional · 🎤 K-Culture · 🌃 Night Views ·
+💑 Date & Romance · 📸 Photo Spots · 🛍️ Shopping · 🌧️ Rainy Day · 👨‍👩‍👧 Family & Kids · 🎬 K-Drama Spots
+
+**경로 옵션 (Add to my route)** — 경로 안에 Secret Stop으로 끼워 넣음
+- 🍽️ 식당·카페 1곳: 점심(11:30–14:00)/저녁(17:30–20:30)에 1시간 이상 걸치면 그 시간대 식당·시장, 아니면 카페. Foodie 테마에선 숨김(식당 최대 2 + 카페 1).
+- 🎟️ 액티비티 1곳: 시티투어버스(주간/야경), 한강 유람선, 한복 대여, 남산 케이블카, 롯데월드, 한강 자전거, 코인노래방
+
+**게임 요소**
+- 🧩 힌트 난이도: Easy(장소 종류·거리 추가 힌트) / Medium / Hard(스톱 종류 배지 숨김, 더 어려운 수수께끼)
+- 📷 사진 미션: 도착 후 "전통적인 무언가를 찍어보세요"처럼 **장소를 스포일러하지 않는** 미션을 통과해야 공개. NVIDIA 비전 모델이 사진 판정.
+- 🏁 두 팀 레이스: 같은 숙소에서 출발해 서로 겹치지 않는 비밀 경로로 이동, **같은 비밀 만남 장소**에서 합류. 먼저 도착한 팀 기록.
+- 🛂 여행 여권: 완주하면 스톱마다 도장이 찍힌 여권 카드
+
+**여행 중**
+- ⏰ Running late?: 늦은 만큼 남은 스톱을 현재 위치에서 다시 최적화(목적지는 계속 비밀)
+- 🆘 Lost? Peek: 확인 후 현재 목적지만 미리 보기
+- 🔊 힌트 음성 읽기(선택한 언어), 🌦️ 날씨 반영(비 예보 시 실내 우선, 사이드바에서 비 시뮬레이션 가능)
+- 🎬 공개 카드에 촬영된 K-드라마 표시
 
 ## 구조
 
 | 파일 | 역할 |
 |---|---|
-| `app.py` | Streamlit UI: 무드 선택 → 비밀 스톱 카드 → 길안내 → 도착 시 공개 |
+| `app.py` | Streamlit UI: 설정 → 비밀 스톱 카드 → 길안내 → 도착(미션) → 공개 → 여권 |
 | `ui.py`, `.streamlit/config.toml` | 디자인 시스템: 크림 캔버스, 6색 컬러 카드(스톱마다 순환), Inter, 둥근 모서리, 클레이풍 히어로 일러스트 |
-| `planner.py` | 동선 최적화: **Prize-collecting TSP with time windows** (cuOpt / CPU exact DP) |
-| `llm.py` | Nemotron: 자유 문장 무드 → 장소 점수, 다국어 수수께끼 힌트, 스포일러 가드 |
-| `data/seoul_pois.json` | 서울 51곳: 명소 30, 액티비티 8, 식당 7, 카페 4, 시장 2 (좌표는 OpenStreetMap으로 교차 확인) |
+| `planner.py` | 동선 최적화: Prize-collecting TSP with time windows, 그룹 제약, 재계획, 2팀 VRP (cuOpt / CPU exact DP) |
+| `llm.py` | Nemotron: 무드 → 장소 점수, 다국어·난이도별 힌트, 스포일러 가드, 사진 미션 판정 |
+| `weather.py` | Open-Meteo 예보(키 불필요)로 여행 시간대 강수 확률·기온 |
+| `data/seoul_pois.json` | 서울 54곳: 명소·액티비티·식당·카페·시장 (좌표는 OpenStreetMap으로 교차 확인) |
 | `cuopt_check.py` | GPU 머신에서 cuOpt vs CPU 결과 비교 |
 
 ## NVIDIA 기술이 들어가는 곳
 
 1. **Nemotron (build.nvidia.com)**
-   - "rainy day, solo, I love tea and old books" 같은 자유 문장을 전체 장소 점수(0–10)로 변환
-   - 선택된 동선에 대해 여행자 언어(영/일/중/스/프/한)로 **이름을 말하지 않는** 힌트 생성
-   - 생성된 힌트에 장소명이 섞이면 자동으로 큐레이션 힌트로 교체 (스포일러 가드)
-2. **cuOpt**: 각 장소 점수를 prize로, 영업시간을 time window로, 체류시간을 service time으로,
-   여행 시간 예산을 vehicle time window로 넣고 "어디를 갈지 + 어떤 순서로 갈지"를 한 번에 푼다.
-   식당/액티비티 옵션은 그룹별 capacity dimension(최대 1곳) + 큰 prize(사실상 필수)로 표현한다.
-   - CPU 대체 경로(비트마스크 DP)는 정확하지만 후보 12곳까지만 현실적이다.
-   - cuOpt는 전체 후보를 다 넣고 풀 수 있어서, 도시 전체 카탈로그와 여러 여행자로 확장할 수 있다.
+   - 자유 문장 무드("rainy day, solo, I love tea and old books")를 전체 장소 점수(0–10)로 변환
+   - 여행자 언어(영/일/중/스/프/한)·난이도에 맞춰 **이름을 말하지 않는** 힌트 생성, 장소명이 섞이면 큐레이션 힌트로 교체
+   - 사진 미션 판정: `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` (실패 시 `meta/llama-3.2-11b-vision-instruct`)
+2. **cuOpt**
+   - 1인 여행: 장소 점수 = prize, 영업시간 = time window, 체류시간 = service time, 여행 시간 = vehicle time window.
+     식당/액티비티 옵션은 그룹별 capacity dimension(최대 1곳) + 큰 prize(사실상 필수).
+   - 레이스 모드: **차량 2대 VRP** — 두 차량이 같은 출발점에서 나가 같은 만남 장소로 복귀(`set_vehicle_locations`, `set_min_vehicles(2)`).
+   - 재계획: 현재 위치·시각에서 남은 시간으로 다시 풂.
+   - CPU 대체(비트마스크 DP)는 정확하지만 후보 12곳까지만 현실적이고, 레이스는 팀 A→B 순차 드래프트로 근사한다.
 
 ## cuOpt를 GPU에서 돌리기 (Colab T4 / Brev)
 
@@ -51,26 +68,26 @@ pip install --extra-index-url=https://pypi.nvidia.com 'cuopt-cu12==26.2.*' reque
 python cuopt_check.py          # CPU vs cuOpt 결과 비교 출력
 ```
 
-앱 사이드바의 "Route solver"에서 `cuopt`를 고르면 cuOpt를 쓴다. 설치돼 있지 않으면 CPU로 자동 대체되고,
-Judge mode에 그 사실이 표시된다. cuOpt 코드는 공식 API(`set_order_prizes`, `set_order_time_windows`,
-`set_drop_return_trips` 등)로 작성했지만 **GPU에서 아직 실행해 보지 않았다.** 데모 전에 `cuopt_check.py`로 꼭 확인할 것.
+사이드바 "Route solver"에서 `cuopt`를 고르면 cuOpt를 쓴다. 없으면 CPU로 자동 대체되고 Judge mode에 표시된다.
+cuOpt 코드는 공식 API로 작성했지만 **GPU에서 아직 실행해 보지 않았다.** 데모 전에 `cuopt_check.py`로 꼭 확인할 것.
 
 ## 3분 데모 시나리오
 
 1. **문제 (20초)**: "서울 온 외국인은 어디 갈지 고르는 데서 지친다. 결정은 AI에게 맡기고 놀라움만 즐기자."
-2. **무드 입력 (30초)**: `🌿 Healing & Slow` 선택 + 🍽️ 식당, 🎟️ 액티비티 토글 ON, 숙소 Myeongdong, 언어 日本語.
-   날짜는 화요일 이후로 (시티투어버스는 월요일 휴무).
-3. **플래닝 (20초)**: 상태창에 "Nemotron이 장소를 읽는 중 → 동선 최적화 → 힌트 작성" 순서가 보인다.
-4. **블라인드 진행 (60초)**: 🔒 Secret Stop 1의 힌트를 보여주고 Kakao Map 버튼을 누른다. 지도에는 "Secret Stop 1"로만 표시된다. 이어서 📍 도착 버튼을 눌러 이름을 공개한다(한글 이름은 현지인에게 보여주는 용도).
-5. **Judge mode (40초)**: 사이드바 토글로 점수표, 후보 목록, 사용한 경로 계산 방식과 소요 시간, 전체 동선 지도를 보여준다.
-6. **확장 (10초)**: 음성 가이드(Nemotron Speech), 실시간 GPS, 전국 확장.
+2. **무드 입력 (30초)**: `🌿 Healing & Slow` + 🍽️·🎟️ 토글 ON, 언어 日本語, 난이도 Easy, 📷 사진 미션 ON. 날짜는 화요일 이후(시티투어버스 월요일 휴무).
+3. **플래닝 (20초)**: 상태창에 "Nemotron이 장소를 읽는 중 → 동선 최적화 → 힌트 작성".
+4. **블라인드 진행 (50초)**: 🔒 힌트 → 🔊 읽기 → Kakao Map("Secret Stop 1"로만 표시) → 📍 도착 → 📷 사진 미션 → 공개(한글 이름·🎬 드라마).
+5. **돌발 상황 (30초)**: ⏰ "30분 늦었어요" → 남은 동선 재최적화, 사이드바 🌧️ 비 시뮬레이션으로 실내 위주 경로.
+6. **Judge mode + 레이스 (30초)**: 점수표·후보·솔버 표시, 🏁 두 팀 레이스로 cuOpt 2-vehicle VRP 소개.
 
 ## 알려진 한계
 
-- 이동시간은 직선거리 기반 추정치다(1.2 km 이하는 도보, 그 이상은 지하철로 계산). 실서비스에서는 카카오모빌리티 같은 경로 API로 바꿔야 한다.
-- 영업시간과 휴무일은 대략값이다. 공휴일과 계절 운영(예: 반포 분수는 4–10월)은 반영하지 않았다.
-- 시티투어버스·유람선처럼 정해진 출발 시각이 있는 액티비티는 "도착 가능 시간대"로 근사했다(출발 대기 시간 미반영).
-- 식당은 미쉐린/블루리본 등 오래된 유명 노포 위주. 예약 필수 파인다이닝(밍글스, 정식당, 온지음)은
-  워크인 블라인드 동선과 맞지 않아 제외했다.
-- Google Maps는 좌표만 넘겨도 주소를 표시해서 장소가 드러날 수 있다. Kakao Map 링크는 라벨을 "Secret Stop N"으로 덮는다.
-- 스포일러 가드는 영문명과 한글명 문자열만 검사한다. 일본어나 중국어 표기(예: 景福宮)는 걸러내지 못한다.
+- 이동시간은 직선거리 기반 추정치(1.2 km 이하는 도보, 그 이상은 지하철). 실서비스는 경로 API로 교체 필요.
+- 영업시간·휴무일은 대략값. 공휴일·계절 운영(예: 반포 분수 4–10월)은 미반영.
+- 시티투어버스·유람선 등 출발 시각이 정해진 액티비티는 "도착 가능 시간대"로 근사.
+- 식당은 미쉐린/블루리본 노포 위주. 예약 필수 파인다이닝(밍글스, 정식당, 온지음)은 워크인 동선과 맞지 않아 제외.
+- K-드라마 촬영지는 여행 가이드(Pelago 등) 기준이며 장면 단위로 검증하지는 않았다.
+- 음성 읽기는 브라우저 내장 음성(Web Speech API)이라 기기에 해당 언어 음성이 있어야 한다. NVIDIA Riva/Nemotron Speech는 추후 과제.
+- 카메라는 HTTPS 또는 localhost에서만 동작한다(폰으로 시연하려면 HTTPS 배포 필요). 사진 업로드는 어디서나 가능.
+- Google Maps는 좌표만 넘겨도 주소를 표시해 장소가 드러날 수 있다. Kakao Map 링크는 라벨을 "Secret Stop N"으로 덮는다.
+- 스포일러 가드는 영문명·한글명 문자열만 검사한다. 일본어·중국어 표기(예: 景福宮)는 걸러내지 못한다.

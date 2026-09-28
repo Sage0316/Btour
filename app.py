@@ -88,7 +88,8 @@ def easy_clue(stop, from_pt):
                 break
     km = haversine_km(from_pt, (stop.poi["lat"], stop.poi["lng"]))
     inside = ", mostly indoors" if "indoor" in tags else ""
-    return f"Extra clue: it's {cat or 'a local favorite'}, about {km:.1f} km away{inside}."
+    drama = " You may have seen it in a K-drama." if stop.poi.get("dramas") else ""
+    return f"Extra clue: it's {cat or 'a local favorite'}, about {km:.1f} km away{inside}.{drama}"
 
 
 def mission_for(poi):
@@ -438,7 +439,9 @@ else:
                 f'<h2 class="bt-display-md">{ui.text(stop.poi["name_en"])}</h2>'
                 f'<p class="bt-ko">{ui.text(stop.poi["name_ko"])}</p>'
                 f'<p class="bt-caption">Show this to locals if you need directions</p>'
-                f'<p class="bt-body" style="margin-top:20px">{ui.text(text_for(stop, "reveal"))}</p>'
+                + (f'<p style="margin:14px 0 0">{ui.pills(["🎬 Seen in: " + ", ".join(stop.poi["dramas"])])}</p>'
+                   if stop.poi.get("dramas") else "")
+                + f'<p class="bt-body" style="margin-top:20px">{ui.text(text_for(stop, "reveal"))}</p>'
                 f'<div class="bt-frag" style="background:var(--canvas)">💡 {ui.text(text_for(stop, "tip"))}</div>')
             if i in ss.get("photos", {}):
                 st.image(ss.photos[i], caption="Your mission photo", width=320)

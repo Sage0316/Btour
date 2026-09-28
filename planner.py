@@ -45,6 +45,7 @@ THEMES = {
     "shopping": ("🛍️ Shopping", {"shopping": 5, "food": 1}),
     "rainy": ("🌧️ Rainy Day", {"indoor": 5, "calm": 1}),
     "family": ("👨‍👩‍👧 Family & Kids", {"family": 5, "nature": 1}),
+    "kdrama": ("🎬 K-Drama Spots", {"kdrama": 5, "romantic": 1}),
 }
 
 # Kinds that only show up on request (or, for restaurants/cafés, on the Foodie theme).
